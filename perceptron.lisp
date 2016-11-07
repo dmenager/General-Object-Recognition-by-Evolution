@@ -41,6 +41,7 @@
 ;; img = image to initialize perceptron
 ;; p = perceptron
 (defun initialize-perceptron (img p)
-  (setq (perceptron-weights p) 
-	(mapcar #'(lambda (val)
-		    (/ (random 101 (make-random-state t)) 100)))))
+  (setf (perceptron-weights p) 
+	(mapcar #'(lambda ()
+		    (/ (random 101 (make-random-state t)) 100))
+		img)))
