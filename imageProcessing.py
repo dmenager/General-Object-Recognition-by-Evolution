@@ -7,7 +7,7 @@ from skimage import data
 from skimage import io
 
 parser = argparse.ArgumentParser(description='Process Image.')
-parser.add_argument('image', metavar='N', type=str, nargs=1,
+parser.add_argument('image', metavar='I', type=str, nargs=1,
                    help='')
 
 args = parser.parse_args()

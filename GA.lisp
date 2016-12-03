@@ -1,6 +1,5 @@
 (load "perceptron")
 
-
 #| Shuffle list |#
 
 (defun random-shuffle (sequence)
@@ -25,12 +24,44 @@
 	  collect (list ':image image ':label (second img-dir)) into res
      finally (return res))))
 
+#| Convert eco feature to python string of lists |#
+
+;; feats = eco-feature ((x1 x2 y1 y2) (f1 params) (f2 params) ... (fn params))
+(defun make-str-features (feats)
+  (let (string-stream)
+    (setq string-stream (make-string-output-stream))
+    ;; add outer layer list
+    (write-string "[" string-stream)
+    (mapcar #'(lambda (feature)
+		(write-string "[" string-stream)
+		(loop
+		   for arg in feature
+		   do
+		     (if (or (numberp arg) (symbolp arg))
+			 (write-string (write-to-string arg) string-stream)
+			 (write-string arg string-stream))
+		     (when (not (= (position arg feature)
+				   (- (length feature) 1)))
+		       (write-string ", " string-stream)))
+		(write-string "]" string-stream))
+	    feats)
+    (write-string "]" string-stream)
+    (get-output-stream-string string-stream)))
+
 #| Apply transformations to image, as described by eco-feature |#
 
-;; transforms = eco-feature
+;; transforms = eco-feature in python string of list
 ;; img = image to apply eco-features to
 (defun pre-process-image (transforms img)
-  )
+  (sb-ext:run-program "python"
+		      (list (concatenate 'string
+					 (sb-unix::posix-getenv "HOME")
+					 "/Code/courses/eecs_741/General-Object-Recognition-by-Evolution/imageTransforms.py")			      
+			    img
+			    transforms)
+		      :search t
+		      :wait nil
+		      :output :stream))
 
 #| Train the perceptron |#
 (defun train (perceptron img)
@@ -43,7 +74,7 @@
     (setq transforms
 	  (list '(:name gabor :types (img float))
 		'(:name gradient :types (img int))
-		'(:name square-root :types (img))
+		;;'(:name square-root :types (img)) 
 		'(:name gaussian :types (img))
 		'(:name histogram :types (img int))
 		'(:name hough-circle :types (img float bool))
@@ -53,7 +84,7 @@
 		'(:name integral-blur :types (img))
 		'(:name canny-edge :types (img float float float))
 		'(:name rank-order :types (img))
-		'(:name resize :types (img))
+		;;'(:name resize :types (img)) ;; implement size tuple
 		;;'(:name log :num-params 0 :types '(())) ;; Ask Dr. Wang about this
 		'(:name sobel :types (img))
 		;;'(:name DoG :num-params 0 :types '(())) ;; Ask Theodore about this
@@ -64,8 +95,8 @@
 		'(:name equalize-hist :types (img int))
 		'(:name laplace-edge :types (img int))
 		;;'(:name distance-transform :types '(()) ;; Ask Dr. Wang about this
-		'(:name dilation :types (img))
-		'(:name corner-harris :types (img ("k" "eps") float float float))
+		'(:name dilation :types (img int))
+		;;'(:name corner-harris :types (img ("k" "eps") float float float)) ;; investigate this later
 		;;'(:name census-transform :types '(())) ;; Ask Dr. Wang about this
 		;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
 		))
@@ -110,7 +141,7 @@
     
     (setq perceptron (make-perceptron))
     (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
-    (setq feats (create-transforms))
+    (setq feats (create-transforms))    
     (list ':features (cons region feats) ':perceptron perceptron)))
 
 #| Genetic algorithm to evolve eco-features |#
@@ -133,12 +164,14 @@
        do
 	 (loop ;; I need to verify if a candidate feature is good
 	    for creature in candidate-feats
+	    with str-features = nil
 	    do
+	      (setq str-features (make-str-features (getf creature :features)))
 	      (loop 
 		 for image in training-set
 		 with img = nil
 		 do
-		   (setq img (pre-process-image (getf creature :features) img))
+		   (setq img (pre-process-image str-features img))
 		   (train (getf creature :perceptron) img))
 	      (loop
 		 for hold in holding-set
