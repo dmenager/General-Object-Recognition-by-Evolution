@@ -16,13 +16,20 @@
 
 #| Read images from directory into memory |#
 (defun read-images (img-dirs)
-  (loop
-     for img-dir in img-dirs
-     nconc
-       (loop
-	  for image in (directory (first img-dir))
-	  collect (list ':image image ':label (second img-dir)) into res
-     finally (return res))))
+  (let (imgs cip)
+    (loop
+       for img-dir in img-dirs
+       for i from 0 to (- (length img-dirs) 1)
+       collect (cons i (second img-dir)) into category-index-pairs      
+       do
+	 (loop
+	    for image in (directory (first img-dir))
+	    collect (list ':image image ':label i) into images
+	    finally (setq imgs (nconc imgs images)))
+       finally
+	;; (format t "images:~%~A~%cip:~%~A~%" images category-index-pairs)
+	 (setq cip category-index-pairs))
+    (values imgs cip)))
 
 #| Convert eco feature to python string of lists |#
 
@@ -64,8 +71,7 @@
 		      :output :stream))
 
 #| Train the perceptron |#
-(defun train (perceptron img)
-  )
+(defun train (perceptron img))
 
 (defun create-transforms ()
   (let (transforms num-transforms)
@@ -101,6 +107,7 @@
 		;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
 		))
     (setq num-transforms (random (length transforms) (make-random-state t)))
+    (format t "Selected number of transforms: ~d~%" num-transforms)
     (loop
        for i from 1 to num-transforms
        with cur-transform = nil and transform-types = nil and transform-name = nil
@@ -132,15 +139,18 @@
   (let (max-width max-height x1 x2 y1 y2 perceptron feats region)
     (setq max-width 1000)
     (setq max-height 1000)
-    
+
+    (format t "Defining ROI.~%")
     (setq x1 (rand-in-range 0 (- max-width 2)))
     (setq x2 (rand-in-range (+ 1 x1) (- max-width 1)))
     (setq y1 (rand-in-range 0 (- max-height 2)))
     (setq y2 (rand-in-range (+ 1 y1) (- max-height 1)))
     (setq region (list x1 x2 y1 y2))
-    
+    (format t "Creating perceptron.~%")
     (setq perceptron (make-perceptron))
+    (format t "Initializing weights.~%")
     (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+    (format t "Creating Transformations.~%")
     (setq feats (create-transforms))    
     (list ':features (cons region feats) ':perceptron perceptron)))
 
@@ -148,41 +158,55 @@
 ;; size-pop = size of population
 ;; num-generations = number of generations to create
 ;; dirs = list of images
-(defun evolve-features (size-pop num-generations dirs holding-dir)
-  (let (candidate-feats eco-feats training-set holding-set dataset split-index)
+(defun evolve-features (size-pop num-generations dirs)
+  (let (candidate-feats
+	eco-feats
+	training-set
+	holding-set
+	dataset
+	split-index
+	images
+	category-index-pairs)
+
     ;; Read in the data, create training and test set
-    (setq dataset (random-shuffle (read-images dirs)))
-    (setq split-index (round (* .7 (length dataset))))
-    (setq training-set (subseq dataset 0 split-index))
-    (setq holding-set (subseq dataset split-index))
-    (loop
-       for i from 0 to (- size-pop 1)
-       do
-	 (push (create-creature) candidate-feats))
-    (loop
-       for i from 0 to (- num-generations 1)
-       do
-	 (loop ;; I need to verify if a candidate feature is good
-	    for creature in candidate-feats
-	    with str-features = nil
-	    do
-	      (setq str-features (make-str-features (getf creature :features)))
-	      (loop 
-		 for image in training-set
-		 with img = nil
-		 do
-		   (setq img (pre-process-image str-features img))
-		   (train (getf creature :perceptron) img))
-	      (loop
-		 for hold in holding-set
-		 with fitness = 0 and tp = 0 and tn = 0 and fp = 0 and fn = 0
-		 do
-		   (setq fitness (fitness creature hold))
-		 ;;finally 
-		 ;; set creatures fitness
-		 ;; if creature's fitness > thresh, then save to eco-feats
-		   ))
-	 (generate-next-generation))))
+    (multiple-value-bind (images category-index-pairs) (read-images dirs)
+      (setq dataset (random-shuffle images))
+      (setq split-index (round (* .7 (length dataset))))
+      (setq training-set (subseq dataset 0 split-index))
+      (setq holding-set (subseq dataset split-index))
+      (format t "Creating Solutions ...~%")
+      (loop
+	 for i from 0 to (- size-pop 1)
+	 do
+	   (push (create-creature) candidate-feats))
+      (format t "Creatures:~%~A~%" candidate-feats)
+      (loop
+	 for i from 0 to (- num-generations 1)
+	 do
+	   (loop ;; I need to verify if a candidate feature is good
+	      for creature in candidate-feats
+	      with str-features = nil
+	      do
+		(setq str-features (make-str-features (getf creature :features)))
+		(format t "Training on ~d images~%" (length training-set))
+		(loop 
+		   for image in training-set
+		   with img = nil
+		   do
+		     (format t "Transforming image...~%")
+		     (setq img (pre-process-image str-features img))
+		     (format t "Training perceptron...~%")
+		     (train (getf creature :perceptron) img))
+		(loop
+		   for hold in holding-set
+		   with fitness = 0 and tp = 0 and tn = 0 and fp = 0 and fn = 0
+		   do
+		     (setq fitness (fitness creature hold))
+		   ;;finally 
+		   ;; set creatures fitness
+		   ;; if creature's fitness > thresh, then save to eco-feats
+		     ))
+	   (generate-next-generation)))))
 
 #|
 (random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack))))

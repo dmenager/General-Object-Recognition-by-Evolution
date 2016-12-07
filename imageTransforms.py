@@ -27,7 +27,7 @@ args = parser.parse_args()
 
 img = args.image[0]
 image = os.path.abspath(img)
-img_gray = io.imread(image, True)
+img = io.imread(image, True)
 
 trans = args.transforms[0]
 transf = trans.replace('[','').split('],')
@@ -41,22 +41,22 @@ try:
             x2 = int(transform[1])
             y1 = int(transform[2])
             y2 = int(transform[3])
-            image = image[x1, x2 : y1, y2]
+            img = image[x1, x2 : y1, y2]
         else :
             if transform[0].lower() == "gradient":
-                img = gradient(img, disk(transform[1]))
+                img = gradient(img, disk(int(transform[1])))
             elif transform[0].lower() == "gaussian":
                 img = gaussian(img)
             elif transform[0].lower() == "histogram":
                 img = img_as_ubyte(img)
-                img = rank.equalize(img, disk(transform[1]))
+                img = rank.equalize(img, disk(int(transform[1])))
             elif transform[0].lower() == "hough-circle":
                 img = img_as_ubyte(img)
-                edges = canny(image, sigma=3, low_threshold=10, high_threshold=50)
+                edges = canny(img, sigma=3, low_threshold=10, high_threshold=50)
 
                 # Detect two radii
                 hough_radii = np.arange(15, 30, 2)
-                hough_res = hough_circle(edges, hough_radii)
+                hough_res = hough_circle(edges, float(transform[1]), transform[2] == True)
                 
                 centers = []
                 accums = []
@@ -76,11 +76,11 @@ try:
                     cx, cy = circle_perimeter(center_y, center_x, radius)
                     img[cy, cx] = (220, 20, 20)
             elif transform[0].lower() == "median-blur":
-                img = median(img, disk(transform[1]))
+                img = median(img, disk(int(transform[1])))
             elif transform[0].lower() == "integral-blur":
                 img = integral_image(img)
             elif transform[0].lower() == "canny-edge":
-                img = feature.canny(img, transform[1], transform[2], transform[3])
+                img = feature.canny(img, float(transform[1]), float(transform[2]), float(transform[3]))
             elif transform[0].lower() == "rank-order":
                 img = rank_order(img)
             #elif transform[0].lower() == "resize":
@@ -102,5 +102,9 @@ try:
             #elif transform[0].lower() == "corner-harris":
             elif transform[0].lower() == "gabor":
                 img = gabor(img, float(transform[1]))
+    print "(",
+    for intensity in np.nditer(img):
+        print str(intensity) + " ",
+    print ")"
 except:
     print "nil"
