@@ -90,9 +90,6 @@
 	(push form res)))
     res))
 
-#| Train the perceptron |#
-(defun train (perceptron img))
-
 #| Determine the fitness of a perceptron |#
 (defun fitness (a b))
 
@@ -179,10 +176,27 @@
     (format t "Creating Transformations.~%")
     (setq feats (create-transforms))    
     (if enable-roi
-	(list ':features (cons region feats) ':perceptron perceptron)
-	(list ':features feats ':perceptron perceptron))))
+	(list ':features (cons region feats) ':perceptron perceptron :fitness nil)
+	(list ':features feats ':perceptron perceptron :fitness nil))))
 
-(defun generate-next-generation ())
+(defun cross-over (c1 c2))
+
+(defun mutate (c1))
+
+#| Create the next generation of creatures|#
+
+;; candidate-feats = current generation
+;; mutation-prob = mutation probability of child
+(defun generate-next-generation (candidate-feats mutation-prob)
+  (let (fitnesses mean-fitness most-fit)
+    (setq fitnesses (mapcar #'(lambda (feat) (getf feat :fitness))))
+    (setq mean-fitness (/ (reduce '+ fitnesses) (length fitnesses)))
+
+    (setq most-fit
+	  (mapcan (creature)
+		  (when (> (getf creature :fitness) mean-fitness)
+		    (list creature))))
+    ))
 
 #| Genetic algorithm to evolve eco-features |#
 ;; size-pop = size of population
@@ -225,26 +239,41 @@
 		   do
 		     (format t "Transforming ~A with ~%~A~%...~%" (getf image :image) str-features)
 		     (setq img (pre-process-image str-features (getf image :image)))
-		     #|
+
+		     ;; print any errors from python
 		     (when (not (numberp (first img)))
-		       (format t "~A~%" img)
-		       (break))|#
-		     (cond ((equal '(ROI Fault) img)
-			    (format t "Region of Interest out of bounds for ~A~%~%" (getf image :image))))
+		       (format t "~A~%" img))
+		     
 		     (when (or (numberp (car img)))		       
 		       ;;(break "Processed:~%~A~%" img)
 		       (format t "Training perceptron...~%")
-		       (setf (getf creature :perceptron) (train (getf creature :perceptron) img))))
+		       (setf (getf creature :perceptron) (train (getf creature :perceptron)
+								'(:image img :label (getf image :label))
+								.5))))
+		(format t "Testing on holdout set of size ~d~%" (length holding-set))
 		(loop
 		   for hold in holding-set
 		   with fitness = 0 and tp = 0 and tn = 0 and fp = 0 and fn = 0
+		   with img = nil
 		   do
-		     (setq fitness (fitness creature hold))
-		   ;;finally 
-		   ;; set creatures fitness
-		   ;; if creature's fitness > thresh, then save to eco-feats
-		     ))
-	   (generate-next-generation)))))
+		     (format t "Transforming ~A with ~%~A~%...~%" (getf hold :image) str-features)
+		     (setq img (pre-process-image str-features (getf hold :image)))
+		     (let (predicted gound)
+		       (setq predicted (classify img (getf creature :perceptron) 1))
+		       (setq ground (getf hold :label))
+		       (cond ((and (= predicted 0) (= ground 0))
+			      (incf tn))
+			     ((and (= predicted 1) (= gound 1))
+			      (incf tp))
+			     ((and (= predicted 0) (= ground 1))
+			      (incf fn))
+			     ((and (= predicted 1) (= ground 0))
+			      (incf fp))))
+		   finally 
+		     (setf (getf creature :fitness) (calculate-fintess tp tn fp fn))
+		     (when (>= (getf creature :fitness) 600)
+		       (push creature eco-feats))))
+	   (setq candidate-feats (generate-next-generation candidate-feats))))))
 
 #|
 (random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack))))

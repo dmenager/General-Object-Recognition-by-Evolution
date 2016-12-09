@@ -32,12 +32,9 @@
 ;; p = perceptron
 ;; b = bias term
 (defun classify (img p b)
-  ;; call python to return a list of lists (img)
-  (let (flat-image)
-    (setq flat-image (py-flatten img))
-    (if (> (+ (weighted-sum flat-image p) b) 0)
-	1
-	0)))
+  (if (> (+ (weighted-sum img p) b) 0)
+      1
+      0)))
 
 #| Update the perceptron weights |#
 ;; l = learning rate
@@ -45,14 +42,24 @@
 ;; ground = image class
 ;; p = perceptron
 ;; img = input image
-(defun update-weights (l a ground p img)
-  (let (flat-image)
-    (setq flat-image (py-flatten img))
-    (loop
-       for i from 0 to (- (length (perceptron-weights p)) 1)
-       with weight-i = (nth i (perceptron-weights p))
-       do
-	 (setf (nth i (perceptron-weights p)) (+ weight-i (* (- ground a) l (nth i flat-img)))))))
+(defun update-weights (l a ground p img)  
+  (loop
+     for i from 0 to (- (length (perceptron-weights p)) 1)
+     with weight-i = (nth i (perceptron-weights p))
+     collect (+ weight-i (* (- ground a) l (nth i img))) into weights
+     finally (return weights)))
+
+#| Train the perceptron |#
+
+;; p = perceptron
+;; img = input image
+;; learning-rate = learning rate
+(defun train (p img learning-rate)
+  (update-weights learning-rate
+		  (classify (getf img :image) p 1)
+		  (getf img :label)
+		  p
+		  (getf img :img)))
 
 #| Calculate fitness of perceptron |#
 ;; tp = true positive
