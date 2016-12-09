@@ -12,7 +12,7 @@
 #| Define a random number in range [start, end] |#
 
 (defun rand-in-range (start end)
-  (+ start (random (+ 1 (- end start)) (make-random-state t))))
+  (+ start (random (+ 1 (- end start)))))
 
 #| Read images from directory into memory |#
 (defun read-images (img-dirs)
@@ -50,7 +50,7 @@
 		     (when (not (= (position arg feature)
 				   (- (length feature) 1)))
 		       (write-string ", " string-stream)))
-		(write-string "]" string-stream))
+		(write-string "]," string-stream))
 	    feats)
     (write-string "]" string-stream)
     (get-output-stream-string string-stream)))
@@ -60,28 +60,51 @@
 ;; transforms = eco-feature in python string of list
 ;; img = image to apply eco-features to
 (defun pre-process-image (transforms img)
-  (sb-ext:run-program "python"
-		      (list (concatenate 'string
-					 (sb-unix::posix-getenv "HOME")
-					 "/Code/courses/eecs_741/General-Object-Recognition-by-Evolution/imageTransforms.py")			      
-			    img
-			    transforms)
-		      :search t
-		      :wait nil
-		      :output :stream))
+  (let (p out string-stream res)
+    (setq string-stream (make-string-output-stream))
+    (setq p (sb-ext:run-program "python"
+				(list "-W"
+				      "ignore"
+				      (concatenate 'string
+						   (sb-unix::posix-getenv "HOME")
+						   "/Code/courses/eecs_741/General-Object-Recognition-by-Evolution/imageTransforms.py")			      
+				      (namestring img)
+				      transforms)
+				:search t
+				:wait nil
+				:output :stream))
+ 
+    (do ((line (read-line (process-output p) nil nil) (read-line (process-output p) nil nil)))
+	((null line)
+	 (setq out (get-output-stream-string string-stream)))
+      (write-string line string-stream))
+    (setq out (substitute #\: #\( out))
+    (setq out (substitute #\: #\) out))
+    (setq out (substitute #\: #\, out))
+    (setq out (substitute #\Space #\: out))
+    
+    (with-input-from-string (s out)
+      (do ((form (read s nil nil) (read s nil nil)))
+	  ((null form)
+	   (setq res (reverse res)))
+	(push form res)))
+    res))
 
 #| Train the perceptron |#
 (defun train (perceptron img))
+
+#| Determine the fitness of a perceptron |#
+(defun fitness (a b))
 
 (defun create-transforms ()
   (let (transforms num-transforms)
     ;; leaving out optional params
     ;; scikit-image transforms
     (setq transforms
-	  (list '(:name gabor :types (img float))
+	  (list '(:name gabor :types (img float float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
 		'(:name gradient :types (img int))
 		;;'(:name square-root :types (img)) 
-		'(:name gaussian :types (img))
+		'(:name gaussian :types (img int))
 		'(:name histogram :types (img int))
 		'(:name hough-circle :types (img float bool))
 		;;'(:name normalize :num-params 0 :types '(())) ;; Ask Dr. Wang about this
@@ -106,13 +129,13 @@
 		;;'(:name census-transform :types '(())) ;; Ask Dr. Wang about this
 		;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
 		))
-    (setq num-transforms (random (length transforms) (make-random-state t)))
+    (setq num-transforms (random (length transforms)))
     (format t "Selected number of transforms: ~d~%" num-transforms)
     (loop
        for i from 1 to num-transforms
        with cur-transform = nil and transform-types = nil and transform-name = nil
        do
-	 (setq cur-transform (nth (random (length transforms) (make-random-state t)) transforms))
+	 (setq cur-transform (nth (random (length transforms)) transforms))
 	 (setq transform-types (getf cur-transform :types))
 	 (setq transform-name (getf cur-transform :name))
 	 (loop
@@ -122,20 +145,23 @@
 	      (cond
 		((equal 'img type))
 		((equal 'float type)
-		 (push (random 100.00 (make-random-state t)) type-vals))
+		 (push (random 100.00) type-vals))
 		((equal 'int type)
-		 (push (random 100 (make-random-state t)) type-vals))
+		 (push (random 100) type-vals))
 		((listp type)
-		 (push (nth (random (length type) (make-random-state t)) type) type-vals))
+		 (push (nth (random (length type)) type) type-vals))
 		((equal 'bool type)
-		 (push (nth (random 2 (make-random-state t)) '(t nil)) type-vals))
+		 (push (nth (random 2) '(t nil)) type-vals))
 		(t (error "Unsupported transform type: ~A" type)))
 	    finally (setq transform-types (reverse type-vals)))
 	 (push transform-name transform-types)
        collect transform-types into eco-transforms
        finally (return eco-transforms))))
 
-(defun create-creature ()
+#| Create an ECO-Feature |#
+
+;; enable-roi = eco-features with transformations on Regions of Interest
+(defun create-creature (&optional (enable-roi t))
   (let (max-width max-height x1 x2 y1 y2 perceptron feats region)
     (setq max-width 1000)
     (setq max-height 1000)
@@ -152,7 +178,11 @@
     (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
     (format t "Creating Transformations.~%")
     (setq feats (create-transforms))    
-    (list ':features (cons region feats) ':perceptron perceptron)))
+    (if enable-roi
+	(list ':features (cons region feats) ':perceptron perceptron)
+	(list ':features feats ':perceptron perceptron))))
+
+(defun generate-next-generation ())
 
 #| Genetic algorithm to evolve eco-features |#
 ;; size-pop = size of population
@@ -178,8 +208,8 @@
       (loop
 	 for i from 0 to (- size-pop 1)
 	 do
-	   (push (create-creature) candidate-feats))
-      (format t "Creatures:~%~A~%" candidate-feats)
+	   (push (create-creature nil) candidate-feats))
+      (format t "~%")
       (loop
 	 for i from 0 to (- num-generations 1)
 	 do
@@ -193,10 +223,18 @@
 		   for image in training-set
 		   with img = nil
 		   do
-		     (format t "Transforming image...~%")
-		     (setq img (pre-process-image str-features img))
-		     (format t "Training perceptron...~%")
-		     (train (getf creature :perceptron) img))
+		     (format t "Transforming ~A with ~%~A~%...~%" (getf image :image) str-features)
+		     (setq img (pre-process-image str-features (getf image :image)))
+		     #|
+		     (when (not (numberp (first img)))
+		       (format t "~A~%" img)
+		       (break))|#
+		     (cond ((equal '(ROI Fault) img)
+			    (format t "Region of Interest out of bounds for ~A~%~%" (getf image :image))))
+		     (when (or (numberp (car img)))		       
+		       ;;(break "Processed:~%~A~%" img)
+		       (format t "Training perceptron...~%")
+		       (setf (getf creature :perceptron) (train (getf creature :perceptron) img))))
 		(loop
 		   for hold in holding-set
 		   with fitness = 0 and tp = 0 and tn = 0 and fp = 0 and fn = 0
@@ -210,4 +248,6 @@
 
 #|
 (random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack))))
+
+(evolve-features 10 10 '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack)))
 |#
