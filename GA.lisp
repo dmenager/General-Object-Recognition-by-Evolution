@@ -55,6 +55,15 @@
     (write-string "]" string-stream)
     (get-output-stream-string string-stream)))
 
+#| Close the pipe, close all streams to the process|#
+
+;; process = process started by sb-ext
+(defun kill-and-close-process (process)
+  (sb-ext:process-kill process 15 :pid)
+  (sb-ext:process-wait process)
+  (sb-ext:process-close process)
+  (sb-ext:process-exit-code process))
+
 #| Apply transformations to image, as described by eco-feature |#
 
 ;; transforms = eco-feature in python string of list
@@ -78,11 +87,14 @@
 	((null line)
 	 (setq out (get-output-stream-string string-stream)))
       (write-string line string-stream))
+    
     (setq out (substitute #\: #\( out))
     (setq out (substitute #\: #\) out))
     (setq out (substitute #\: #\, out))
     (setq out (substitute #\Space #\: out))
-    
+
+    (kill-and-close-process p)
+
     (with-input-from-string (s out)
       (do ((form (read s nil nil) (read s nil nil)))
 	  ((null form)
@@ -90,51 +102,19 @@
 	(push form res)))
     res))
 
-#| Determine the fitness of a perceptron |#
-(defun fitness (a b))
-
-(defun create-transforms ()
-  (let (transforms num-transforms)
-    ;; leaving out optional params
-    ;; scikit-image transforms
-    (setq transforms
-	  (list '(:name gabor :types (img float float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
-		'(:name gradient :types (img int))
-		;;'(:name square-root :types (img)) 
-		'(:name gaussian :types (img int))
-		'(:name histogram :types (img int))
-		'(:name hough-circle :types (img float bool))
-		;;'(:name normalize :num-params 0 :types '(())) ;; Ask Dr. Wang about this
-		;;'(:name convert :num-params 0 :types '(())) ;; Ask Dr. Wang about this
-		'(:name median-blur :types (img int))
-		'(:name integral-blur :types (img))
-		'(:name canny-edge :types (img float float float))
-		'(:name rank-order :types (img))
-		;;'(:name resize :types (img)) ;; implement size tuple
-		;;'(:name log :num-params 0 :types '(())) ;; Ask Dr. Wang about this
-		'(:name sobel :types (img))
-		;;'(:name DoG :num-params 0 :types '(())) ;; Ask Theodore about this
-		'(:name erosion :types (img int))
-		'(:name threshold-adaptive :types (img int ("generic" "gaussian" "mean" "median")))
-		'(:name hough-line :types (img))
-		;;'(:name fourier :num-params 0 :types '(())) ;; Ask Theodore about this
-		'(:name equalize-hist :types (img int))
-		'(:name laplace-edge :types (img int))
-		;;'(:name distance-transform :types '(()) ;; Ask Dr. Wang about this
-		'(:name dilation :types (img int))
-		;;'(:name corner-harris :types (img ("k" "eps") float float float)) ;; investigate this later
-		;;'(:name census-transform :types '(())) ;; Ask Dr. Wang about this
-		;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
-		))
-    (setq num-transforms (random (length transforms)))
+(defun create-transforms (transforms)
+  (let (num-transforms)
+    (if (= 1 (length transforms))
+	(setq num-transforms 1)
+	(setq num-transforms (+ 1 (random (- (length transforms) 1)))))
     (format t "Selected number of transforms: ~d~%" num-transforms)
     (loop
        for i from 1 to num-transforms
-       with cur-transform = nil and transform-types = nil and transform-name = nil
+       with transform-template = nil and transform-types = nil and transform-name = nil
        do
-	 (setq cur-transform (nth (random (length transforms)) transforms))
-	 (setq transform-types (getf cur-transform :types))
-	 (setq transform-name (getf cur-transform :name))
+	 (setq transform-template (nth (random (length transforms)) transforms))
+	 (setq transform-types (getf transform-template :types))
+	 (setq transform-name (getf transform-template :name))
 	 (loop
 	    for type in transform-types
 	    with type-vals = nil
@@ -158,7 +138,7 @@
 #| Create an ECO-Feature |#
 
 ;; enable-roi = eco-features with transformations on Regions of Interest
-(defun create-creature (&optional (enable-roi t))
+(defun create-creature (transforms &optional (enable-roi t))
   (let (max-width max-height x1 x2 y1 y2 perceptron feats region)
     (setq max-width 1000)
     (setq max-height 1000)
@@ -172,31 +152,143 @@
     (format t "Creating perceptron.~%")
     (setq perceptron (make-perceptron))
     (format t "Initializing weights.~%")
-    (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+    (if  enable-roi
+	 (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+	 (initialize-perceptron (* max-width max-height) perceptron))
     (format t "Creating Transformations.~%")
-    (setq feats (create-transforms))    
+    (setq feats (create-transforms transforms))    
     (if enable-roi
-	(list ':features (cons region feats) ':perceptron perceptron :fitness nil)
-	(list ':features feats ':perceptron perceptron :fitness nil))))
+	(list ':features (cons region feats) ':perceptron perceptron ':fitness nil)
+	(list ':features feats ':perceptron perceptron ':fitness nil))))
 
-(defun cross-over (c1 c2))
+#| Create a new child through cross-over |#
 
-(defun mutate (c1))
+;; c1 = creature 1
+;; c2 = creature 2
+(defun cross-over (c1 c2 &optional (enable-roi t))
+  (let (max-width max-height picker first-half second-half perceptron x1 x2 y1 y2 region)
+    (setq picker (random 2))
+    (setq max-width 1000)
+    (setq max-height 1000)
+
+    (format t "Defining ROI.~%")
+    (setq x1 (rand-in-range 0 (- max-width 2)))
+    (setq x2 (rand-in-range (+ 1 x1) (- max-width 1)))
+    (setq y1 (rand-in-range 0 (- max-height 2)))
+    (setq y2 (rand-in-range (+ 1 y1) (- max-height 1)))
+    (setq region (list x1 x2 y1 y2))
+    (format t "Creating perceptron.~%")
+    (setq perceptron (make-perceptron))
+    (format t "Initializing weights.~%")
+    (if enable-roi
+	(initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+	(initialize-perceptron (* max-width max-height) perceptron))
+    (format t "Genetic Recombination.~%")
+    (cond ((= 0 picker)
+	   (setq picker (random (length (getf c1 :features))))
+	   (setq first-half (subseq (getf c1 :features) 0 picker))
+	   
+	   (setq picker (random (length (getf c2 :features))))
+	   (setq second-half (subseq (getf c2 :features) picker)))
+	  ((= 1 picker)
+	   (setq picker (random (length (getf c2 :features))))
+	   (setq first-half (subseq (getf c2 :features) 0 picker))
+	   (setq picker (random (length (getf c1 :features))))
+	   (setq second-half (subseq (getf c1 :features) picker))))
+    (list ':features (append first-half second-half) ':perceptron perceptron ':fitness nil)))
+
+#| Mutate child |#
+
+;; c1 = child
+;; mutation-prob = probability of mutating child
+;; transforms = transformation templates
+(defun mutate (c1 mutation-prob transforms)
+  (format t "Original Child features: ~A~%" (getf c1 :features))
+  (let (chance)
+    (setq chance (random 101))
+    (cond ((<= chance (* 100 mutation-prob))
+	   (format t"Mutating child.~%")
+	   (let (mutate-index feature feature-mutate-index mutated-feature)
+	     ;; pick place to change
+	     (setq mutate-index (random (length (getf c1 :features))))
+	     (setq feature (nth mutate-index (getf c1 :features)))
+
+	     ;; pick position to change
+	     (setq feature-mutate-index (random (length feature)))
+	     (cond ((= 0 feature-mutate-index)
+		    ;; get transform
+		    (let (new-transforms)
+		      (setq new-transforms (list (nth (random (length transforms)) transforms)))
+		      (setq mutated-feature (car (create-transforms new-transforms)))))
+		   (t
+		    ;; find transform and get a new value for it
+		    (let (template)
+		      (loop
+			 named filter
+			 for feature-template in transforms
+			 do
+			   (when (eq (getf feature-template :name) (first feature))
+			     (setq template feature-template)
+			     (return-from filter)))
+		      (loop
+			 for i from 1 to (- (length feature) 1)
+			 ;; keep everything else the same
+			 if (not (= i feature-mutate-index))
+			 collect (nth i feature) into accumulator
+			 else
+			 collect
+			   (let (type type-val)
+			     ;; get the type of the change
+			     (setq type (nth i (getf template :types)))
+			     (cond
+			       ((equal 'img type))
+			       ((equal 'float type)
+				(setq type-val (random 100.00)))
+			       ((equal 'int type)
+				(setq type-val (random 100)))
+			       ((listp type)
+				(setq type-val (nth (random (length type)) type)))
+			       ((equal 'bool type)
+				(setq type-val (nth (random 2) '(t nil))))
+			       (t (error "Unsupported transform type: ~A" type)))
+			     type-val) into accumulator
+			 finally
+			   (setq mutated-feature (cons (car feature) accumulator))))))
+	     ;; change
+	     (setf (nth mutate-index (getf c1 :features)) mutated-feature)
+	     (format t "Child mutated to:~A~%" (getf c1 :features))
+	     c1))
+	  (t
+	   (format t "No mutations performed. Returning Child.~%")
+	   c1))))
 
 #| Create the next generation of creatures|#
 
 ;; candidate-feats = current generation
 ;; mutation-prob = mutation probability of child
-(defun generate-next-generation (candidate-feats mutation-prob)
+;; transforms = transformations 
+(defun generate-next-generation (candidate-feats mutation-prob transforms)
   (let (fitnesses mean-fitness most-fit)
-    (setq fitnesses (mapcar #'(lambda (feat) (getf feat :fitness))))
+    (setq fitnesses (mapcar #'(lambda (feat)
+				(getf feat :fitness))
+			    candidate-feats))
     (setq mean-fitness (/ (reduce '+ fitnesses) (length fitnesses)))
-
+    
     (setq most-fit
-	  (mapcan (creature)
-		  (when (> (getf creature :fitness) mean-fitness)
-		    (list creature))))
-    ))
+	  (mapcan #'(lambda (creature)
+		      (when (> (getf creature :fitness) mean-fitness)
+			(list creature)))
+		  candidate-feats))
+    (loop
+       named business-time
+       for creature1 in most-fit
+       nconc
+	 (loop
+	    for creature2 in most-fit
+	    when (not (equal creature1 creature2))
+	    collect (mutate (cross-over creature1 creature2) mutation-prob transforms) into kids
+	    finally (return kids)) into next-gen
+       finally (return-from business-time next-gen))))
 
 #| Genetic algorithm to evolve eco-features |#
 ;; size-pop = size of population
@@ -209,9 +301,39 @@
 	holding-set
 	dataset
 	split-index
-	images
-	category-index-pairs)
-
+	transforms)
+    ;; leaving out optional params
+    ;; scikit-image transforms
+    (setq transforms
+	  (list '(:name gabor :types (img float float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
+		'(:name gradient :types (img int))
+		;;'(:name square-root :types (img)) 
+		'(:name gaussian :types (img int))
+		'(:name histogram :types (img int))
+		'(:name hough-circle :types (img float bool))
+		;;'(:name normalize :num-params 0 :types '(())) ;; Ask Dr. Wang about this
+		;;'(:name convert :num-params 0 :types '(())) ;; Ask Dr. Wang about this
+		'(:name median-blur :types (img int))
+		'(:name integral-blur :types (img))
+		'(:name canny-edge :types (img float float float))
+		'(:name rank-order :types (img))
+		;;'(:name resize :types (img)) ;; implement size tuple
+		;;'(:name log :num-params 0 :types '(())) ;; Ask Dr. Wang about this
+		'(:name sobel :types (img))
+		;;'(:name DoG :num-params 0 :types '(())) ;; Ask Theodore about this
+		'(:name erosion :types (img int))
+		;;'(:name threshold-adaptive :types (img int ("generic" "gaussian" "mean" "median")))
+		'(:name hough-line :types (img))
+		;;'(:name fourier :num-params 0 :types '(())) ;; Ask Theodore about this
+		'(:name equalize-hist :types (img int))
+		'(:name laplace-edge :types (img int))
+		;;'(:name distance-transform :types '(()) ;; Ask Dr. Wang about this
+		'(:name dilation :types (img int))
+		;;'(:name corner-harris :types (img ("k" "eps") float float float)) ;; investigate this later
+		;;'(:name census-transform :types '(())) ;; Ask Dr. Wang about this
+		;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
+		))
+    
     ;; Read in the data, create training and test set
     (multiple-value-bind (images category-index-pairs) (read-images dirs)
       (setq dataset (random-shuffle images))
@@ -222,61 +344,108 @@
       (loop
 	 for i from 0 to (- size-pop 1)
 	 do
-	   (push (create-creature nil) candidate-feats))
+	   (push (create-creature transforms nil) candidate-feats))
       (format t "~%")
       (loop
 	 for i from 0 to (- num-generations 1)
 	 do
-	   (loop ;; I need to verify if a candidate feature is good
+	   (loop
 	      for creature in candidate-feats
 	      with str-features = nil
 	      do
-		(setq str-features (make-str-features (getf creature :features)))
-		(format t "Training on ~d images~%" (length training-set))
-		(loop 
-		   for image in training-set
-		   with img = nil
-		   do
-		     (format t "Transforming ~A with ~%~A~%...~%" (getf image :image) str-features)
-		     (setq img (pre-process-image str-features (getf image :image)))
+		(block continue
+		  (setq str-features (make-str-features (getf creature :features)))
+		  (format t "------------------------------------~%")
+		  (format t "Training on ~d images~%" (length holding-set))
+		  (format t "------------------------------------~%")
+		  (loop 
+		     for image in training-set
+		     with img = nil
+		     do
+		       (format t "Transforming ~A with ~%~A~%" (getf image :image) str-features)
+		       (setq img (pre-process-image str-features (getf image :image)))
 
-		     ;; print any errors from python
-		     (when (not (numberp (first img)))
-		       (format t "~A~%" img))
-		     
-		     (when (or (numberp (car img)))		       
-		       ;;(break "Processed:~%~A~%" img)
-		       (format t "Training perceptron...~%")
-		       (setf (getf creature :perceptron) (train (getf creature :perceptron)
-								'(:image img :label (getf image :label))
-								.5))))
-		(format t "Testing on holdout set of size ~d~%" (length holding-set))
-		(loop
-		   for hold in holding-set
-		   with fitness = 0 and tp = 0 and tn = 0 and fp = 0 and fn = 0
-		   with img = nil
-		   do
-		     (format t "Transforming ~A with ~%~A~%...~%" (getf hold :image) str-features)
-		     (setq img (pre-process-image str-features (getf hold :image)))
-		     (let (predicted gound)
-		       (setq predicted (classify img (getf creature :perceptron) 1))
-		       (setq ground (getf hold :label))
-		       (cond ((and (= predicted 0) (= ground 0))
-			      (incf tn))
-			     ((and (= predicted 1) (= gound 1))
-			      (incf tp))
-			     ((and (= predicted 0) (= ground 1))
-			      (incf fn))
-			     ((and (= predicted 1) (= ground 0))
-			      (incf fp))))
-		   finally 
-		     (setf (getf creature :fitness) (calculate-fintess tp tn fp fn))
-		     (when (>= (getf creature :fitness) 600)
-		       (push creature eco-feats))))
-	   (setq candidate-feats (generate-next-generation candidate-feats))))))
+		       ;; print any errors from python
+		       (when (not (numberp (first img)))
+			 (format t "~A~%~%" img)
+			 (remove creature candidate-feats :test 'equal)
+			 (return-from continue))
+		       
+		       (format t "Training perceptron..~%~%")
+		       (setf (perceptron-weights (getf creature :perceptron))
+			     (train (getf creature :perceptron)
+				    (list ':image img ':label (getf image ':label))
+				    .5)))
+		  (format t "------------------------------------~%")
+		  (format t "Testing on holdout set of size ~d~%" (length holding-set))
+		  (format t "------------------------------------~%")
+		  (loop
+		     for hold in holding-set
+		     with tp = 0 and tn = 0 and fp = 0 and fn = 0
+		     with img = nil
+		     do
+		       (format t "Transforming ~A with ~%~A~%...~%~%" (getf hold :image) str-features)
+		       (setq img (pre-process-image str-features (getf hold :image)))
+		       (let (predicted ground hold-label)
+			 (setq hold-label (getf hold :label))
+			 (setq predicted (classify img (getf creature :perceptron) 1))
+			 (setq ground (car (assoc hold-label category-index-pairs)))
+			 (cond ((and (= predicted 0) (= ground 0))
+				(incf tn))
+			       ((and (= predicted 1) (= ground 1))
+				(incf tp))
+			       ((and (= predicted 0) (= ground 1))
+				(incf fn))
+			       ((and (= predicted 1) (= ground 0))
+				(incf fp))))
+		     finally 
+		       (setf (getf creature :fitness) (calculate-fitness tp tn fp fn))
+		       (format t "Fitness score for ~A~%~d~%~%" str-features (getf creature :fitness))
+		       (when (>= (getf creature :fitness) 600)
+			 (format t "Added creature to ECO Features!~%")
+			 (push creature eco-feats)))))
+	   (setq candidate-feats (generate-next-generation candidate-feats .5 transforms)))
+      )))
 
 #|
 (random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack))))
 
 (evolve-features 10 10 '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack)))
+
+;; TEST CROSS-OVER
+(cross-over (list ':features '((GABOR 25.139236 2.700901 1.0129333 29.400885 41 34.586823 reflect 1)(INTEGRAL-BLUR)(RANK-ORDER)(EQUALIZE-HIST 61)(HISTOGRAM 71)(GRADIENT 31)(HISTOGRAM 62)(HISTOGRAM 60)(RANK-ORDER)(EQUALIZE-HIST 59)(SOBEL)(DILATION 22)(DILATION 45)(RANK-ORDER)) ':perceptron nil)
+	    (list ':features '((EQUALIZE-HIST 13)(RANK-ORDER)(EROSION 63)(HOUGH-CIRCLE 86.685455 T)) ':perceptron nil))
+
+;; TEST MUTATION
+(mutate (cross-over (list ':features '((GABOR 25.139236 2.700901 1.0129333 29.400885 41 34.586823 reflect 1)(INTEGRAL-BLUR)(RANK-ORDER)(EQUALIZE-HIST 61)(HISTOGRAM 71)(GRADIENT 31)(HISTOGRAM 62)(HISTOGRAM 60)(RANK-ORDER)(EQUALIZE-HIST 59)(SOBEL)(DILATION 22)(DILATION 45)(RANK-ORDER)) ':perceptron nil)
+	    (list ':features '((EQUALIZE-HIST 13)(RANK-ORDER)(EROSION 63)(HOUGH-CIRCLE 86.685455 T)) ':perceptron nil)) 1 
+	    (list '(:name gabor :types (img float float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
+		  '(:name gradient :types (img int))
+		  ;;'(:name square-root :types (img)) 
+		  '(:name gaussian :types (img int))
+		  '(:name histogram :types (img int))
+		  '(:name hough-circle :types (img float bool))
+		  ;;'(:name normalize :num-params 0 :types '(())) ;; Ask Dr. Wang about this
+		  ;;'(:name convert :num-params 0 :types '(())) ;; Ask Dr. Wang about this
+		  '(:name median-blur :types (img int))
+		  '(:name integral-blur :types (img))
+		  '(:name canny-edge :types (img float float float))
+		  '(:name rank-order :types (img))
+		  ;;'(:name resize :types (img)) ;; implement size tuple
+		  ;;'(:name log :num-params 0 :types '(())) ;; Ask Dr. Wang about this
+		  '(:name sobel :types (img))
+		  ;;'(:name DoG :num-params 0 :types '(())) ;; Ask Theodore about this
+		  '(:name erosion :types (img int))
+		  ;;'(:name threshold-adaptive :types (img int ("generic" "gaussian" "mean" "median")))
+		  '(:name hough-line :types (img))
+		  ;;'(:name fourier :num-params 0 :types '(())) ;; Ask Theodore about this
+		  '(:name equalize-hist :types (img int))
+		  '(:name laplace-edge :types (img int))
+		  ;;'(:name distance-transform :types '(()) ;; Ask Dr. Wang about this
+		  '(:name dilation :types (img int))
+		  ;;'(:name corner-harris :types (img ("k" "eps") float float float)) ;; investigate this later
+		  ;;'(:name census-transform :types '(())) ;; Ask Dr. Wang about this
+		  ;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
+		  ))
+
 |#

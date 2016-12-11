@@ -1,20 +1,5 @@
 (defstruct perceptron weights)
 
-(defun py-flatten (img)
-  (let (flattened p string-stream)
-    (setq string-stream make-string-output-stream)
-    (write-string (sb-unix::posix-getenv "HOME") string-stream)
-    (write-string "/Code/courses/eecs_741/General-Object-Recognition-by-Evolution/imageProcessing.py")
-    (setq p
-	  (sb-ext:run-program "python"
-			      (list (get-output-stream-string string-stream)			      
-				    img)
-			      :search t
-			      :wait nil
-			      :output :stream))
-    (setq flattened (read (process-output p)))
-    flattened))
-
 (defun flatten (x &optional stack out)
   (cond ((consp x) (flatten (rest x) (cons (first x) stack) out))
         (x         (flatten (first stack) (rest stack) (cons x out)))
@@ -34,7 +19,7 @@
 (defun classify (img p b)
   (if (> (+ (weighted-sum img p) b) 0)
       1
-      0)))
+      0))
 
 #| Update the perceptron weights |#
 ;; l = learning rate
@@ -42,11 +27,12 @@
 ;; ground = image class
 ;; p = perceptron
 ;; img = input image
-(defun update-weights (l a ground p img)  
+(defun update-weights (l a ground p img)
   (loop
      for i from 0 to (- (length (perceptron-weights p)) 1)
+     for j from 0 to (- (length img) 1)
      with weight-i = (nth i (perceptron-weights p))
-     collect (+ weight-i (* (- ground a) l (nth i img))) into weights
+     collect (+ weight-i (* (- ground a) l (nth j img))) into weights
      finally (return weights)))
 
 #| Train the perceptron |#
@@ -59,7 +45,7 @@
 		  (classify (getf img :image) p 1)
 		  (getf img :label)
 		  p
-		  (getf img :img)))
+		  (getf img :image)))
 
 #| Calculate fitness of perceptron |#
 ;; tp = true positive
