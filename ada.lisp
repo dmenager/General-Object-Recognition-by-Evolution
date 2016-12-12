@@ -26,7 +26,8 @@
 #| Classify an image with Adaboost |#
 
 ;; boost = adaboost classifier
-;; img = image to classify
+;; image = image to classify
+;; tau = threshold
 (defun ada-classify (boost image tau)
   (let (img str-features)
     (if (> (reduce '+ (mapcar #'(lambda (weight classifier)
@@ -54,7 +55,7 @@
     (setq boost (make-ada-boost))
     (if (> (length classifiers) max-classifiers)
 	(setf (ada-boost-classifiers boost)
-	      (subseq classiiers 0 max-classifiers))
+	      (subseq classifiers 0 max-classifiers))
 	(setf (ada-boost-classifiers boost) classifiers))
     (setf (ada-boost-classifier-weights boost)
 	  (make-list (length (ada-boost-classifiers boost)) :initial-element 0))
@@ -76,18 +77,14 @@
 	 (loop
 	    for classifier in (ada-boost-classifiers boost)
 	    for i from 0 to (- (length perceptron-errors) 1)
-	    with str-features = (make-str-features (getf classifier :features))
 	    do
 	      (loop
 		 for m from 0 to (- (length training) 1)
-		 with image = nil and image-class = nil and img = nil
+		 with image = nil and image-class = nil
 		 do
 		   (setq image (nth m training))
 		   (setq image-class (getf image :label))
-		   (setq img (getf image :image))
-		   (when (not (= image-class (ada-classify (pre-process-image str-features img)
-							   (getf classifier :perceptron)
-							   tau)))
+		   (when (not (= image-class (ada-classify boost image tau)))
 		     (setf (nth i perceptron-errors) (+ (nth i perceptron-errors) (nth m image-errors))))))
 	 (let (min-perceptron-err coeff)
 	   (setq min-perceptron-err (apply 'min perceptron-errors))
@@ -99,15 +96,12 @@
 		 coeff)
 	   (loop
 	      for m from 0 to (- (length training) 1)
-	      with image = nil and image-class = nil and img = nil
+	      with image = nil and image-class = nil
 	      with c = 0 and normalization-factor = 0 and numerator = 0
 	      do
 		(setq image (nth m training))
 		(setq image-class (getf image :label))
-		(setq img (getf image :image))
-		(if (= image-class (ada-classify (pre-process-image str-features img)
-						    (getf classifier :perceptron)
-						    tau))
+		(if (= image-class (ada-classify boost image tau))
 		    (setq c 1)
 		    (setq c -1))
 		(setq numerator (* (nth m image-errors) (exp (* (- 0 coeff) c))))

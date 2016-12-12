@@ -126,8 +126,8 @@ for i, transform in enumerate(transforms):
             for _, angle, dist in zip(*hough_line_peaks(h, angles, d)):
                 y0 = (dist - 0 * np.cos(angle)) / np.sin(angle)
                 y1 = (dist - cols * np.cos(angle)) / np.sin(angle)
-                # ERROR HERE...idk what y0 and y1 are
-                img[y0, y1] = 255
+                rr, cc =line(0, y0, cols, y1)
+                img[rr, cc] = 255
         elif transform[0].lower() == "equalize-hist":
             exitStr = "(applying exposure.equalize_hist)"
             img = exposure.equalize_hist(img, int(transform[1]))

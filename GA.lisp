@@ -393,7 +393,7 @@
 	 do
 	   (push (create-creature transforms nil) candidate-feats))
       (format t "~%")
-      (create-file "generations.csv" "Generations" "Average Fitness" "Average Precision" "Average Recall" "Average Accuracy")
+      (create-file "generations.csv" 'Generations 'Average-Fitness 'Average-Precision 'Average-Recall 'Average-Accuracy)
       (loop
 	 for i from 0 to (- num-generations 1)
 	 with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
@@ -478,7 +478,7 @@
       (save-features eco-feats)
       (let (boost max-classifiers)
 	(setq max-classifiers 100)
-	(create-file "boost.csv" "Tau" "Nothing" "Precision" "Recall" "Accuracy")
+	(create-file "boost.csv" 'Tau 'Nothing 'Precision 'Recall 'Accuracy)
 	(loop
 	   for tau from 0 to (min max-classifiers (length eco-feats))
 	   do
@@ -486,7 +486,7 @@
 	     (setq boost (initialize-ada-boost max-classifiers eco-feats))
 	     
 	     (format t "Adaboost weights before training.~%~A~%" (ada-boost-classifier-weights boost))
-	     (train-ada-boost boost training-set)
+	     (train-ada-boost boost training-set tau)
 	     (format t "Adaboost weights after training.~%~A~%" (ada-boost-classifier-weights boost))
 
 	     (format t "------------------------------------~%")
