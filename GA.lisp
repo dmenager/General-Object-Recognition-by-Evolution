@@ -1,7 +1,51 @@
 (load "perceptron")
+(load "ada")
+
+#| Create data output file for genetic algorithm |#
+
+;; filename = name of file to create
+;; index = index column
+;; avg-fitness = average fitness column
+;; avg-precision = precision column
+;; avg-recall = recall column
+;; avg-accuracy = accuracy column
+(defun create-file (filename index avg-fitness avg-precision avg-recall avg-accuracy)
+  (with-open-file (stream filename
+			  :direction :output
+			  :if-exists :supersede
+			  :if-does-not-exist :create)
+    (format stream "~S,~S,~S,~S,~S~%" index avg-fitness avg-precision avg-recall avg-accuracy)))
+
+#| Write data output file for genetic algorithm |#
+
+;; filename = name of file to create
+;; index = data for index column
+;; avg-fitness = data for average fitness column
+;; avg-precision = data for precision column
+;; avg-recall = data for recall column
+;; avg-accuracy = data for accuracy column
+(defun write-to-file (filename index &optional avg-fitness avg-precision avg-recall avg-accuracy)
+  (with-open-file (stream filename
+			  :direction :output
+			  :if-exists :append
+			  :if-does-not-exist :error)
+    (format stream "~d,~d,~d,~d,~d~%" index avg-fitness avg-precision avg-recall avg-accuracy)))
+
+#| Save evolved features to a file |#
+
+;; eco-feats = evolved ECO-Features
+(defun save-features (eco-feats)
+  (with-open-file (stream "eco-features.txt"
+			  :direction :input
+			  :if-exists :supersede
+			  :if-does-not-exist :create)
+    (mapcar #'(lambda (feat)
+		(format t "~A~%" feat))
+	    eco-feats)))
 
 #| Shuffle list |#
 
+;; sequence = dataset
 (defun random-shuffle (sequence)
   (map-into sequence #'car
             (sort (map 'vector (lambda (x)
@@ -288,9 +332,12 @@
 	    when (not (equal creature1 creature2))
 	    collect (mutate (cross-over creature1 creature2) mutation-prob transforms) into kids
 	    finally (return kids)) into next-gen
-       finally (return-from business-time next-gen))))
+       finally
+	 (format t "Next generation contains ~d members~%"(length next-gen))
+	 (return-from business-time next-gen))))
 
 #| Genetic algorithm to evolve eco-features |#
+
 ;; size-pop = size of population
 ;; num-generations = number of generations to create
 ;; dirs = list of images
@@ -346,9 +393,13 @@
 	 do
 	   (push (create-creature transforms nil) candidate-feats))
       (format t "~%")
+      (create-file "generations.csv" "Generations" "Average Fitness" "Average Precision" "Average Recall" "Average Accuracy")
       (loop
 	 for i from 0 to (- num-generations 1)
+	 with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
+	 with tps = nil and tns = nil and fps = nil and fns = nil and fs = nil
 	 do
+	   (format t "GENERATION: ~d~%" i)
 	   (loop
 	      for creature in candidate-feats
 	      with str-features = nil
@@ -398,14 +449,70 @@
 				(incf fn))
 			       ((and (= predicted 1) (= ground 0))
 				(incf fp))))
-		     finally 
+		     finally
 		       (setf (getf creature :fitness) (calculate-fitness tp tn fp fn))
 		       (format t "Fitness score for ~A~%~d~%~%" str-features (getf creature :fitness))
+		       (push (getf creature :fitness) fs)
+		       (push tp tps)
+		       (push tn tns)
+		       (push fp fps)
+		       (push fn fns)
 		       (when (>= (getf creature :fitness) 600)
 			 (format t "Added creature to ECO Features!~%")
 			 (push creature eco-feats)))))
+	   (setq avg-fitness (/ (reduce '+ fs) (length fs)))
+	   (setq avg-precision (/ (/ (reduce '+ tps) (length tps))
+				  (+ (/ (reduce '+ tps) (length tps))
+				     (/ (reduce '+ fps) (length fps)))))
+	   (setq avg-recall (/ (/ (reduce '+ tps) (length tps))
+				  (+ (/ (reduce '+ tps) (length tps))
+				     (/ (reduce '+ fns) (length fns)))))
+	   (setq avg-accuracy (/ (+ (/ (reduce '+ tps) (length tps))
+				    (/ (reduce '+ tns) (length tns)))
+				 (+ (/ (reduce '+ tps) (length tps))
+				    (/ (reduce '+ tns) (length tns))
+				    (/ (reduce '+ fns) (length fns))
+				    (/ (reduce '+ fps) (length fps)))))
+	   (write-to-file "generations.csv" i avg-fitness avg-precision avg-recall avg-accuracy)
 	   (setq candidate-feats (generate-next-generation candidate-feats .5 transforms)))
-      )))
+      (save-features eco-feats)
+      (let (boost max-classifiers)
+	(setq max-classifiers 100)
+	(create-file "boost.csv" "Tau" "Nothing" "Precision" "Recall" "Accuracy")
+	(loop
+	   for tau from 0 to (min max-classifiers (length eco-feats))
+	   do
+	     (format t "Initializing Adaboost classifier from ~d ECO-Features~%" (length eco-feats))
+	     (setq boost (initialize-ada-boost max-classifiers eco-feats))
+	     
+	     (format t "Adaboost weights before training.~%~A~%" (ada-boost-classifier-weights boost))
+	     (train-ada-boost boost training-set)
+	     (format t "Adaboost weights after training.~%~A~%" (ada-boost-classifier-weights boost))
+
+	     (format t "------------------------------------~%")
+	     (format t "Testing Adaboost on ~d images~%" (length holding-set))
+	     (format t "------------------------------------~%")
+	     (loop
+		for hold in holding-set
+		with tp = 0 and tn = 0 and fp = 0 and fn = 0
+		do
+		  (let (predicted ground hold-label)
+		    (setq hold-label (getf hold :label))
+		    (format t "Predicting with Adaboost classifier~%")
+		    (setq predicted (ada-classify boost hold tau))
+		    (setq ground (car (assoc hold-label category-index-pairs)))
+		    (cond ((and (= predicted 0) (= ground 0))
+			   (incf tn))
+			  ((and (= predicted 1) (= ground 1))
+			   (incf tp))
+			  ((and (= predicted 0) (= ground 1))
+			   (incf fn))
+			  ((and (= predicted 1) (= ground 0))
+			   (incf fp))))
+		finally
+		  (write-to-file "boost.csv" tau 0 (/ tp (+ tp fp)) (/ tp (+ fp tp)) (/ (+ tp tn) (+ tp tn fp fn)))
+		  (format t "~%ADA BOOST CONFUSION MATRIX:~%~A~%~%"
+			  (list (list tp fp) (list fn tn)))))))))
 
 #|
 (random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack))))
