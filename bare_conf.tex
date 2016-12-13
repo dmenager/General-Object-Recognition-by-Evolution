@@ -1,0 +1,96 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{grffile}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{color}
+\definecolor{mygreen}{RGB}{28,172,0} % color values Red, Green, Blue
+\definecolor{mylilas}{RGB}{170,55,241}
+
+\ifCLASSINFOpdf
+  \usepackage[pdftex]{graphicx}
+\else
+\fi
+
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+
+\begin{document}
+
+\author{\IEEEauthorblockN{David Menager}
+\IEEEauthorblockA{School of Electrical Engineering and Computer Science\\
+University of Kansas\\
+Lawrence, Kansas 66045\\
+Email: dmenager@ku.edu}}
+
+\lstset{language=Matlab,%
+    %basicstyle=\color{red},
+    breaklines=true,%
+    morekeywords={matlab2tikz},
+    keywordstyle=\color{blue},%
+    morekeywords=[2]{1}, keywordstyle=[2]{\color{black}},
+    identifierstyle=\color{black},%
+    stringstyle=\color{mylilas},
+    commentstyle=\color{mygreen},%
+    showstringspaces=false,%without this there will be a symbol in the places where there is a space
+    numbers=left,%
+    numberstyle={\tiny \color{black}},% size of the numbers
+    numbersep=9pt, % this defines how far the numbers are from the text
+    emph=[1]{for,end,break},emphstyle=[1]\color{red}, %some words to emphasise
+    %emph=[2]{word1,word2}, emphstyle=[2]{style},    
+  }
+\title{On the Construction of Evolutionary Features for General Object Recognition}
+\maketitle
+
+\begin{abstract}
+  Object recognition is an important part in computer vision that that allows many computer programs to see the light of day. There are many open problems in this area, and in this paper, we examine a particular approach that uses evolutionary methods for constructing salient features of images. These features are then combined in an ensemble classifier to predict an object class. The performance of this system is reportedly state-of-the-art, and we present our methodology and show that our system fails to meet this expectation due to the time constraints required for the completion of this paper.
+\end{abstract}
+
+\IEEEpeerreviewmaketitle
+
+\section{Introduction}
+Many theories in artificial intelligence (AI) become reduced to the realm of ``cool ideas'' without computers that can actualize them in the world in which we live. This is not only true for classical AI tasks such as heuristic search, but for other high level tasks such as completing a search and rescue mission, or inferring other people's goals in an environment. High level tasks such as these fundamentally rely on computer vision modules that allow agents to sense the world. In practice, however, researchers tend to avoid this topic by implementing their solutions in simulations. This allows them to develop strong theories that generalize to diverse environments, but often times the research makes assumptions that the vision problem is already solved. Obviously, this is not true.
+
+There is a wealth of research that aims to tackle the different aspects of computer vision. These works address a breadth of topics such ass 3D reconstruction, remote sensing, and augmented reality. Since we are interested in vision modules for physical agents, we will focus this paper on object recognition. Object recognition is the task of assigning an image to a particular object class. In the standard case, each picture images one object, and thus belongs to one object class. In the supervised context, these classes are known apriori and are associated to their corresponding images in a training set. Then the validation of the models are done by using a hold-out set. A procedure like this bares a strong resemblance to the standard machine learning approach, and in fact object recognition, and pattern matching in general, can be seen as a machine learning problem. This relationship between machine learning and object recognition also implies that in order to produce a quality model, a significant amount of work must be done to clean the data that these models consume. Typically, methods for recognizing objects in images are senstive to:
+\begin{description}
+\item [Lighting conditions]
+  Images of the same object may be subject to different lighting conditions. This difference is potentially enough to mis-classify an object.
+\item [Position of the object]
+  Many algorithms have better performance if the object to recognize is centered in the image at the foreground. Object recognition becomes significantly more challenging when no constraints are placed on the location of the object.
+\item [Orientation of the object]
+  Object recognition algorithms can be sensitive to the orientation of the imaged object because these systems analyze the intensity values of pixels, and do not inherrently extract semantic information from images without further processing.
+\item [Size of the object]
+  As the size of the image object varies, the level of detail will also fluctuate, and so this is another issue object recognition systems must address because the number and quality of features in an object can change.
+\item [Amount of occlusion of the object]
+  Occluded objects are a significant challenge to object recognition systems. Many important features of an object may be missing because they are hidden by another object. 
+\item [etc.]
+  Various other factors such as the color of an object, or the number of objects to recognize in an image affect the quality of object recognition systems.
+\end{description}
+
+All of these give an intuition of the challenging nature of object recognition tasks. In general, it is very difficult to determine which features of an image help to identify the class of an object, given that it may be subject to various levels of noise. Furthermore, the quality of results obtain by these methods are highly dependent on the quality of the datasets being used to train the vision modules. Object recognition is an important research area in computer vision because the success of other, more high-level tasks like extracting relational, or propositional information from 2D images depend on it.
+
+There are many techniques for object recognition \cite{sukanya2016survey}, however in this paper we aim to do this using an ensemble of perceptrons, who have been trained by evolution. This method, proposed by \cite{lillywhite2013feature} performs comparably to deep architectures built for this task, which yield state-of-the art performance. We begin this paper with a review of the genetic algorithm, then we move to explain our experimental setup and compare it with \cite{lillywhite2013feature}. Following this, we provide our results and close with concluding remarks. 
+\section{Genetic Algorithm Review}
+Genetic algorithms simulate evolution. The idea is to create a program that solves problems by using the well-established principles of Darwinian evolution. In essence, the aim is to create programs that solve problems without needing to be told {\it how} to solve them \cite{koza1992genetic}. Genetic algorithms first begin by initializing a random population. Every individual in a population is represented as a gene vector, where each element in that vector is a feature of that individual. Each individual attempts the problem and is assigned a fitness score based on how well the individual solves that problem. Based on the fitness score, the most fit individuals are selected to pass on their genes to the next generation. Through the processes of sexual recombination (cross over) and mutation, the next generation is created. This process continues for $N$ generations, or until some other stopping criteria is reached.
+
+The cross over procedure is quite simple. In order to generate a new individual from sexual recombination, it suffices to choose a cross over point in each parent. Then, choose the parent whos genes form the beginning of the child, and stitch the end of the second parent's genes to the end of the new child's. After a child has been created in this way, mutations may occur that change the child's specific feature values. More intense mutations may occur by deleting or adding entire elements. From this, it is easily seen that genetic algorithms can span the set of possible solutions because solutions are of non-uniform size and mutations allow the solutions to explore new places in the search space.
+
+Genetic algorithms are attractive particularly because of their broad applicability to optimization problems. As long as a problem can be stated in terms of the aforementioned process, genetic algorithms are good candidates for finding high quality solutions to them. Other than the formalisms inherrently embedded in the procedure, and knowledge about the problem do main, no other mathematic constructions are required. For instance, the problem optimal control may be approached with a genetic algorithm. If the programmer is trying to control a UAV and knows what low-level motor actions the UAV can perform, then minimizing the error between the craft's actual state and the desired state becomes a task for evolution. 
+
+In a formal setting, genetic algorithms solve problems by an approach similar to gradient ascent, calld {\it hill climbing}. In gradient ascent, the optimal solution is found by going in the direction of the gradient. On a 3-dimensional convex function, going up the gradient will potentially change all three values of the solution vector instantaneously. This contrasts with hill climbing because, for the case of hill climbing, generating the next solution only involves modifying a set of components from the original solution vector. In other words, new solutions are created by copying part of an old solution and adding a set of new pieces that complete the solution. It may not be immediately clear to the reader, but applying cross over with two parent individuals is hill climbing in the context of the genetic algorithm.
+
+\subsection{Why it Works}
+Now, we consider why the genetic algorithm works. We do not supply a formal proof, but give a strong intuition. The reason why genetic algorithms work is because in each generation they select the most fit individuals to produce the next. Therefore the average fitness of each sucessive generation is non-decreasing. DO MORE WORK HERE.
+\section{Experimental Setup}
+\section{Results}
+\section{Conclusion}
+\section{Appendix}
+%\lstinputlisting{GA.lisp}
+\bibliographystyle{IEEEtran}
+\bibliography{IEEEabrv,menager}
+\end{document}
+
+

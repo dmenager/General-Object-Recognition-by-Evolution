@@ -1,6 +1,12 @@
 (load "perceptron")
 (load "ada")
 
+(defun standard-dev (l mean)
+  (sqrt (* (/ 1.0d0 (length l))
+         (reduce #'+ l
+             :key (lambda (x)
+                (expt (- x mean) 2))))))
+
 #| Create data output file for genetic algorithm |#
 
 ;; filename = name of file to create
@@ -9,12 +15,12 @@
 ;; avg-precision = precision column
 ;; avg-recall = recall column
 ;; avg-accuracy = accuracy column
-(defun create-file (filename index avg-fitness avg-precision avg-recall avg-accuracy)
+(defun create-file (filename index avg-fitness err-fitness avg-precision avg-recall avg-accuracy)
   (with-open-file (stream filename
 			  :direction :output
 			  :if-exists :supersede
 			  :if-does-not-exist :create)
-    (format stream "~S,~S,~S,~S,~S~%" index avg-fitness avg-precision avg-recall avg-accuracy)))
+    (format stream "~S,~S,~S,~S,~S,~S~%" index avg-fitness err-fitness avg-precision avg-recall avg-accuracy)))
 
 #| Write data output file for genetic algorithm |#
 
@@ -24,12 +30,12 @@
 ;; avg-precision = data for precision column
 ;; avg-recall = data for recall column
 ;; avg-accuracy = data for accuracy column
-(defun write-to-file (filename index &optional avg-fitness avg-precision avg-recall avg-accuracy)
+(defun write-to-file (filename index &optional avg-fitness err-fitness avg-precision avg-recall avg-accuracy)
   (with-open-file (stream filename
 			  :direction :output
 			  :if-exists :append
 			  :if-does-not-exist :error)
-    (format stream "~d,~d,~d,~d,~d~%" index avg-fitness avg-precision avg-recall avg-accuracy)))
+    (format stream "~d,~d,~d,~d,~d,~d~%" index avg-fitness err-fitness avg-precision avg-recall avg-accuracy)))
 
 #| Save evolved features to a file |#
 
@@ -202,8 +208,8 @@
     (format t "Creating Transformations.~%")
     (setq feats (create-transforms transforms))    
     (if enable-roi
-	(list ':features (cons region feats) ':perceptron perceptron ':fitness nil)
-	(list ':features feats ':perceptron perceptron ':fitness nil))))
+	(list ':features (cons region feats) ':perceptron perceptron ':fitness 0)
+	(list ':features feats ':perceptron perceptron ':fitness 0))))
 
 #| Create a new child through cross-over |#
 
@@ -239,7 +245,7 @@
 	   (setq first-half (subseq (getf c2 :features) 0 picker))
 	   (setq picker (random (length (getf c1 :features))))
 	   (setq second-half (subseq (getf c1 :features) picker))))
-    (list ':features (append first-half second-half) ':perceptron perceptron ':fitness nil)))
+    (list ':features (append first-half second-half) ':perceptron perceptron ':fitness 0)))
 
 #| Mutate child |#
 
@@ -300,10 +306,10 @@
 			   (setq mutated-feature (cons (car feature) accumulator))))))
 	     ;; change
 	     (setf (nth mutate-index (getf c1 :features)) mutated-feature)
-	     (format t "Child mutated to:~A~%" (getf c1 :features))
+	     (format t "Child mutated to:~A~%~%" (getf c1 :features))
 	     c1))
 	  (t
-	   (format t "No mutations performed. Returning Child.~%")
+	   (format t "No mutations performed. Returning Child.~%~%")
 	   c1))))
 
 #| Create the next generation of creatures|#
@@ -393,10 +399,17 @@
 	 do
 	   (push (create-creature transforms nil) candidate-feats))
       (format t "~%")
-      (create-file "generations.csv" 'Generations 'Average-Fitness 'Average-Precision 'Average-Recall 'Average-Accuracy)
+      (create-file "generations.csv"
+		   'Generations
+		   'Average-Fitness
+		   'Fitness-Error
+		   'Average-Precision
+		   'Average-Recall 
+		   'Average-Accuracy)
       (loop
 	 for i from 0 to (- num-generations 1)
 	 with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
+	 with err-fitness = 0
 	 with tps = nil and tns = nil and fps = nil and fns = nil and fs = nil
 	 do
 	   (format t "GENERATION: ~d~%" i)
@@ -407,7 +420,7 @@
 		(block continue
 		  (setq str-features (make-str-features (getf creature :features)))
 		  (format t "------------------------------------~%")
-		  (format t "Training on ~d images~%" (length holding-set))
+		  (format t "Training on ~d images~%" (length training-set))
 		  (format t "------------------------------------~%")
 		  (loop 
 		     for image in training-set
@@ -419,14 +432,17 @@
 		       ;; print any errors from python
 		       (when (not (numberp (first img)))
 			 (format t "~A~%~%" img)
-			 (remove creature candidate-feats :test 'equal)
+			 (setq candidate-feats
+			       (remove creature candidate-feats
+				       :key #'(lambda (x) (getf x :features))
+				       :test 'equal))
 			 (return-from continue))
 		       
 		       (format t "Training perceptron..~%~%")
 		       (setf (perceptron-weights (getf creature :perceptron))
 			     (train (getf creature :perceptron)
 				    (list ':image img ':label (getf image ':label))
-				    .5)))
+				    .3)))
 		  (format t "------------------------------------~%")
 		  (format t "Testing on holdout set of size ~d~%" (length holding-set))
 		  (format t "------------------------------------~%")
@@ -450,14 +466,14 @@
 			       ((and (= predicted 1) (= ground 0))
 				(incf fp))))
 		     finally
-		       (setf (getf creature :fitness) (calculate-fitness tp tn fp fn))
+		       (setf (getf creature :fitness) (calculate-fitness tp tn fp fn 5))
 		       (format t "Fitness score for ~A~%~d~%~%" str-features (getf creature :fitness))
 		       (push (getf creature :fitness) fs)
 		       (push tp tps)
 		       (push tn tns)
 		       (push fp fps)
 		       (push fn fns)
-		       (when (>= (getf creature :fitness) 600)
+		       (when (>= (getf creature :fitness) 500)
 			 (format t "Added creature to ECO Features!~%")
 			 (push creature eco-feats)))))
 	   (setq avg-fitness (/ (reduce '+ fs) (length fs)))
@@ -473,12 +489,13 @@
 				    (/ (reduce '+ tns) (length tns))
 				    (/ (reduce '+ fns) (length fns))
 				    (/ (reduce '+ fps) (length fps)))))
-	   (write-to-file "generations.csv" i avg-fitness avg-precision avg-recall avg-accuracy)
-	   (setq candidate-feats (generate-next-generation candidate-feats .5 transforms)))
+	   (setq err-fitness (standard-dev fs avg-fitness))
+	   (write-to-file "generations.csv" i avg-fitness err-fitness avg-precision avg-recall avg-accuracy)
+	   (setq candidate-feats (generate-next-generation candidate-feats .01 transforms)))
       (save-features eco-feats)
       (let (boost max-classifiers)
 	(setq max-classifiers 100)
-	(create-file "boost.csv" 'Tau 'Nothing 'Precision 'Recall 'Accuracy)
+	(create-file "boost.csv" 'Tau 'Nothing 'Nothing 'Precision 'Recall 'Accuracy)
 	(loop
 	   for tau from 0 to (min max-classifiers (length eco-feats))
 	   do
@@ -510,7 +527,7 @@
 			  ((and (= predicted 1) (= ground 0))
 			   (incf fp))))
 		finally
-		  (write-to-file "boost.csv" tau 0 (/ tp (+ tp fp)) (/ tp (+ fp tp)) (/ (+ tp tn) (+ tp tn fp fn)))
+		  (write-to-file "boost.csv" tau 0 0 (/ tp (+ tp fp)) (/ tp (+ fp tp)) (/ (+ tp tn) (+ tp tn fp fn)))
 		  (format t "~%ADA BOOST CONFUSION MATRIX:~%~A~%~%"
 			  (list (list tp fp) (list fn tn)))))))))
 

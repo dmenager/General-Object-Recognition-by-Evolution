@@ -52,9 +52,10 @@
 ;; tn = true negative
 ;; fp = false positive
 ;; fn = false negative
-(defun calculate-fitness (tp tn fp fn)
-  (+ (/ (* tp 500) (+ fn tp)) 
-     (/ (* tn 500) (+ fp tn))))
+;; p = penalty
+(defun calculate-fitness (tp tn fp fn p)
+  (+ (/ (* tp 500) (+ (* p fn) tp)) 
+     (/ (* tn 500) (+ (* p fp) tn))))
 
 #| Initialize perceptron weights |#
 

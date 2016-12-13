@@ -11,7 +11,7 @@ from skimage.filters import gaussian, rank, rank_order, sobel, laplace, gabor, t
 from skimage import exposure, img_as_float
 from skimage.transform import hough_circle, integral_image, hough_line, hough_line_peaks
 from skimage.feature import peak_local_max, canny
-from skimage.draw import circle_perimeter
+from skimage.draw import circle_perimeter, line
 from skimage.util import img_as_ubyte
 from skimage import feature
 from skimage.draw import line
@@ -127,7 +127,7 @@ for i, transform in enumerate(transforms):
                 y0 = (dist - 0 * np.cos(angle)) / np.sin(angle)
                 y1 = (dist - cols * np.cos(angle)) / np.sin(angle)
                 rr, cc =line(0, y0, cols, y1)
-                img[rr, cc] = 255
+                img[int(rr), int(cc)] = 255
         elif transform[0].lower() == "equalize-hist":
             exitStr = "(applying exposure.equalize_hist)"
             img = exposure.equalize_hist(img, int(transform[1]))
