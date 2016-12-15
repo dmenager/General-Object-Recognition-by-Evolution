@@ -15,12 +15,12 @@
 ;; avg-precision = precision column
 ;; avg-recall = recall column
 ;; avg-accuracy = accuracy column
-(defun create-file (filename index avg-fitness err-fitness avg-precision avg-recall avg-accuracy)
+(defun create-file (filename index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)
   (with-open-file (stream filename
 			  :direction :output
 			  :if-exists :supersede
 			  :if-does-not-exist :create)
-    (format stream "~S,~S,~S,~S,~S,~S~%" index avg-fitness err-fitness avg-precision avg-recall avg-accuracy)))
+    (format stream "~S,~S,~S,~S,~S,~S,~S,~S,~S~%" index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)))
 
 #| Write data output file for genetic algorithm |#
 
@@ -30,12 +30,12 @@
 ;; avg-precision = data for precision column
 ;; avg-recall = data for recall column
 ;; avg-accuracy = data for accuracy column
-(defun write-to-file (filename index &optional avg-fitness err-fitness avg-precision avg-recall avg-accuracy)
+(defun write-to-file (filename index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)
   (with-open-file (stream filename
 			  :direction :output
 			  :if-exists :append
 			  :if-does-not-exist :error)
-    (format stream "~d,~d,~d,~d,~d,~d~%" index avg-fitness err-fitness avg-precision avg-recall avg-accuracy)))
+    (format stream "~d,~d,~d,~d,~d,~d,~d,~d,~d~%" index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)))
 
 #| Save evolved features to a file |#
 
@@ -61,6 +61,8 @@
 
 #| Define a random number in range [start, end] |#
 
+;; start = start of range
+;; end = end of range
 (defun rand-in-range (start end)
   (+ start (random (+ 1 (- end start)))))
 
@@ -141,10 +143,10 @@
     (setq out (substitute #\: #\( out))
     (setq out (substitute #\: #\) out))
     (setq out (substitute #\: #\, out))
+    (setq out (substitute #\: #\' out))
     (setq out (substitute #\Space #\: out))
-
     (kill-and-close-process p)
-
+    
     (with-input-from-string (s out)
       (do ((form (read s nil nil) (read s nil nil)))
 	  ((null form)
@@ -188,51 +190,39 @@
 #| Create an ECO-Feature |#
 
 ;; enable-roi = eco-features with transformations on Regions of Interest
-(defun create-creature (transforms &optional (enable-roi t))
+(defun create-creature (max-child-size transforms &optional (enable-roi t))
   (let (max-width max-height x1 x2 y1 y2 perceptron feats region)
     (setq max-width 1000)
     (setq max-height 1000)
 
-    (format t "Defining ROI.~%")
-    (setq x1 (rand-in-range 0 (- max-width 2)))
-    (setq x2 (rand-in-range (+ 1 x1) (- max-width 1)))
-    (setq y1 (rand-in-range 0 (- max-height 2)))
-    (setq y2 (rand-in-range (+ 1 y1) (- max-height 1)))
-    (setq region (list x1 x2 y1 y2))
-    (format t "Creating perceptron.~%")
-    (setq perceptron (make-perceptron))
-    (format t "Initializing weights.~%")
-    (if  enable-roi
-	 (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
-	 (initialize-perceptron (* max-width max-height) perceptron))
     (format t "Creating Transformations.~%")
-    (setq feats (create-transforms transforms))    
-    (if enable-roi
-	(list ':features (cons region feats) ':perceptron perceptron ':fitness 0)
-	(list ':features feats ':perceptron perceptron ':fitness 0))))
+    (setq feats (create-transforms transforms))
+    (when (<= (length feats) max-child-size)
+      (format t "Defining ROI.~%")
+      (setq x1 (rand-in-range 0 (- max-width 2)))
+      (setq x2 (rand-in-range (+ 1 x1) (- max-width 1)))
+      (setq y1 (rand-in-range 0 (- max-height 2)))
+      (setq y2 (rand-in-range (+ 1 y1) (- max-height 1)))
+      (setq region (list x1 x2 y1 y2))
+      (format t "Creating perceptron.~%")
+      (setq perceptron (make-perceptron))
+      (format t "Initializing weights.~%")
+      (if  enable-roi
+	   (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+	   (initialize-perceptron (* max-width max-height) perceptron))    
+      (if enable-roi
+	  (list ':features (cons region feats) ':perceptron perceptron ':fitness 0)
+	  (list ':features feats ':perceptron perceptron ':fitness 0)))))
 
 #| Create a new child through cross-over |#
 
 ;; c1 = creature 1
 ;; c2 = creature 2
-(defun cross-over (c1 c2 &optional (enable-roi t))
+(defun cross-over (c1 c2 max-child-size &optional (enable-roi t))
   (let (max-width max-height picker first-half second-half perceptron x1 x2 y1 y2 region)
     (setq picker (random 2))
     (setq max-width 1000)
     (setq max-height 1000)
-
-    (format t "Defining ROI.~%")
-    (setq x1 (rand-in-range 0 (- max-width 2)))
-    (setq x2 (rand-in-range (+ 1 x1) (- max-width 1)))
-    (setq y1 (rand-in-range 0 (- max-height 2)))
-    (setq y2 (rand-in-range (+ 1 y1) (- max-height 1)))
-    (setq region (list x1 x2 y1 y2))
-    (format t "Creating perceptron.~%")
-    (setq perceptron (make-perceptron))
-    (format t "Initializing weights.~%")
-    (if enable-roi
-	(initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
-	(initialize-perceptron (* max-width max-height) perceptron))
     (format t "Genetic Recombination.~%")
     (cond ((= 0 picker)
 	   (setq picker (random (length (getf c1 :features))))
@@ -245,7 +235,23 @@
 	   (setq first-half (subseq (getf c2 :features) 0 picker))
 	   (setq picker (random (length (getf c1 :features))))
 	   (setq second-half (subseq (getf c1 :features) picker))))
-    (list ':features (append first-half second-half) ':perceptron perceptron ':fitness 0)))
+
+    ;; children are capped to max child size
+    (when (and (< 0 (length first-half) (length second-half))
+	       (<= (+ (length first-half) (length second-half)) max-child-size))
+      (format t "Defining ROI.~%")
+      (setq x1 (rand-in-range 0 (- max-width 2)))
+      (setq x2 (rand-in-range (+ 1 x1) (- max-width 1)))
+      (setq y1 (rand-in-range 0 (- max-height 2)))
+      (setq y2 (rand-in-range (+ 1 y1) (- max-height 1)))
+      (setq region (list x1 x2 y1 y2))
+      (format t "Creating perceptron.~%")
+      (setq perceptron (make-perceptron))
+      (format t "Initializing weights.~%")
+      (if enable-roi
+	  (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+	  (initialize-perceptron (* max-width max-height) perceptron))
+      (list ':features (append first-half second-half) ':perceptron perceptron ':fitness 0))))
 
 #| Mutate child |#
 
@@ -253,94 +259,103 @@
 ;; mutation-prob = probability of mutating child
 ;; transforms = transformation templates
 (defun mutate (c1 mutation-prob transforms)
-  (format t "Original Child features: ~A~%" (getf c1 :features))
-  (let (chance)
-    (setq chance (random 101))
-    (cond ((<= chance (* 100 mutation-prob))
-	   (format t"Mutating child.~%")
-	   (let (mutate-index feature feature-mutate-index mutated-feature)
-	     ;; pick place to change
-	     (setq mutate-index (random (length (getf c1 :features))))
-	     (setq feature (nth mutate-index (getf c1 :features)))
-
-	     ;; pick position to change
-	     (setq feature-mutate-index (random (length feature)))
-	     (cond ((= 0 feature-mutate-index)
-		    ;; get transform
-		    (let (new-transforms)
-		      (setq new-transforms (list (nth (random (length transforms)) transforms)))
-		      (setq mutated-feature (car (create-transforms new-transforms)))))
-		   (t
-		    ;; find transform and get a new value for it
-		    (let (template)
-		      (loop
-			 named filter
-			 for feature-template in transforms
-			 do
-			   (when (eq (getf feature-template :name) (first feature))
-			     (setq template feature-template)
-			     (return-from filter)))
-		      (loop
-			 for i from 1 to (- (length feature) 1)
-			 ;; keep everything else the same
-			 if (not (= i feature-mutate-index))
-			 collect (nth i feature) into accumulator
-			 else
-			 collect
-			   (let (type type-val)
-			     ;; get the type of the change
-			     (setq type (nth i (getf template :types)))
-			     (cond
-			       ((equal 'img type))
-			       ((equal 'float type)
-				(setq type-val (random 100.00)))
-			       ((equal 'int type)
-				(setq type-val (random 100)))
-			       ((listp type)
-				(setq type-val (nth (random (length type)) type)))
-			       ((equal 'bool type)
-				(setq type-val (nth (random 2) '(t nil))))
-			       (t (error "Unsupported transform type: ~A" type)))
-			     type-val) into accumulator
-			 finally
-			   (setq mutated-feature (cons (car feature) accumulator))))))
-	     ;; change
-	     (setf (nth mutate-index (getf c1 :features)) mutated-feature)
-	     (format t "Child mutated to:~A~%~%" (getf c1 :features))
-	     c1))
-	  (t
-	   (format t "No mutations performed. Returning Child.~%~%")
-	   c1))))
+  (when (not (null c1))
+    (format t "Original Child features: ~A~%" (getf c1 :features))
+    (let (chance)
+      (setq chance (random 101))
+      (cond ((<= chance (* 100 mutation-prob))
+	     (format t"Mutating child.~%")
+	     (let (mutate-index feature feature-mutate-index mutated-feature)
+	       ;; pick place to change
+	       (setq mutate-index (random (length (getf c1 :features))))
+	       (setq feature (nth mutate-index (getf c1 :features)))
+	       
+	       ;; pick position to change
+	       (setq feature-mutate-index (random (length feature)))
+	       (cond ((= 0 feature-mutate-index)
+		      ;; get transform
+		      (let (new-transforms)
+			(setq new-transforms (list (nth (random (length transforms)) transforms)))
+			(setq mutated-feature (car (create-transforms new-transforms)))))
+		     (t
+		      ;; find transform and get a new value for it
+		      (let (template)
+			(loop
+			   named filter
+			   for feature-template in transforms
+			   do
+			     (when (eq (getf feature-template :name) (first feature))
+			       (setq template feature-template)
+			       (return-from filter)))
+			(loop
+			   for i from 1 to (- (length feature) 1)
+			   ;; keep everything else the same
+			   if (not (= i feature-mutate-index))
+			   collect (nth i feature) into accumulator
+			   else
+			   collect
+			     (let (type type-val)
+			       ;; get the type of the change
+			       (setq type (nth i (getf template :types)))
+			       (cond
+				 ((equal 'img type))
+				 ((equal 'float type)
+				  (setq type-val (random 100.00)))
+				 ((equal 'int type)
+				  (setq type-val (random 100)))
+				 ((listp type)
+				  (setq type-val (nth (random (length type)) type)))
+				 ((equal 'bool type)
+				  (setq type-val (nth (random 2) '(t nil))))
+				 (t (error "Unsupported transform type: ~A" type)))
+			       type-val) into accumulator
+			   finally
+			     (setq mutated-feature (cons (car feature) accumulator))))))
+	       ;; change
+	       (setf (nth mutate-index (getf c1 :features)) mutated-feature)
+	       (format t "Child mutated to:~A~%~%" (getf c1 :features))
+	       c1))
+	    (t
+	     (format t "No mutations performed. Returning Child.~%~%")
+	     c1)))))
 
 #| Create the next generation of creatures|#
 
 ;; candidate-feats = current generation
 ;; mutation-prob = mutation probability of child
 ;; transforms = transformations 
-(defun generate-next-generation (candidate-feats mutation-prob transforms)
-  (let (fitnesses mean-fitness most-fit)
+(defun generate-next-generation (candidate-feats mutation-prob max-child-size transforms generation-num)
+  (let (fitnesses mean-fitness most-fit next-gen min-pop)
     (setq fitnesses (mapcar #'(lambda (feat)
 				(getf feat :fitness))
 			    candidate-feats))
     (setq mean-fitness (/ (reduce '+ fitnesses) (length fitnesses)))
-    
-    (setq most-fit
-	  (mapcan #'(lambda (creature)
-		      (when (> (getf creature :fitness) mean-fitness)
-			(list creature)))
-		  candidate-feats))
-    (loop
-       named business-time
-       for creature1 in most-fit
-       nconc
-	 (loop
-	    for creature2 in most-fit
-	    when (not (equal creature1 creature2))
-	    collect (mutate (cross-over creature1 creature2) mutation-prob transforms) into kids
-	    finally (return kids)) into next-gen
-       finally
-	 (format t "Next generation contains ~d members~%"(length next-gen))
-	 (return-from business-time next-gen))))
+    (when  (> (length fitnesses) 0 )
+      (setq most-fit
+	    (mapcan #'(lambda (creature)
+			(when (>= (getf creature :fitness) mean-fitness)
+			  (list creature)))
+		    candidate-feats))
+      (format t "Average Fitness of Generation ~d: ~d~%" generation-num mean-fitness)
+      (setq min-pop 10)
+      (loop
+	 named business-time
+	 while (< (length next-gen) min-pop)
+	 do
+	   (loop
+	      for creature1 in most-fit
+	      do
+		(loop
+		   for creature2 in most-fit
+		   with child = nil
+		   when (not (equal creature1 creature2))
+		   do
+		     (setq child (mutate (cross-over creature1 creature2 max-child-size nil) mutation-prob transforms))
+		     (when (not (null child))
+		       (setq next-gen (cons child next-gen)))))
+	 finally
+	   (format t "Next generation contains ~d members~%"(length next-gen))
+	   (return-from business-time next-gen)))))
 
 #| Genetic algorithm to evolve eco-features |#
 
@@ -354,9 +369,15 @@
 	holding-set
 	dataset
 	split-index
-	transforms)
+	transforms
+	learning-rate
+	bias
+	max-child-size)
     ;; leaving out optional params
     ;; scikit-image transforms
+    (setq bias 0)
+    (setq learning-rate 1)
+    (setq max-child-size 5)
     (setq transforms
 	  (list '(:name gabor :types (img float float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
 		'(:name gradient :types (img int))
@@ -395,22 +416,31 @@
       (setq holding-set (subseq dataset split-index))
       (format t "Creating Solutions ...~%")
       (loop
-	 for i from 0 to (- size-pop 1)
+	 while (< (length candidate-feats) size-pop)
+	 with creature = nil
 	 do
-	   (push (create-creature transforms nil) candidate-feats))
-      (format t "~%")
+	   (setq creature (create-creature max-child-size transforms nil))
+	   (cond ((not (null creature))
+		  (format t "Creature SUCCESS~%~%")
+		  (push creature candidate-feats))
+		 (t
+		  (format t "Creature FAILED~%~%"))))
       (create-file "generations.csv"
 		   'Generations
 		   'Average-Fitness
 		   'Fitness-Error
 		   'Average-Precision
-		   'Average-Recall 
-		   'Average-Accuracy)
+		   'Precision-Error
+		   'Average-Recall
+		   'Recall-Error
+		   'Average-Accuracy
+		   'Accuracy-Error)
       (loop
 	 for i from 0 to (- num-generations 1)
 	 with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
-	 with err-fitness = 0
-	 with tps = nil and tns = nil and fps = nil and fns = nil and fs = nil
+	 with err-fitness = 0 and err-precision = 0 and err-recall = 0 and err-accuracy = 0
+	 with fs = nil
+	 with precisions = nil and recalls = nil and accuracys = nil
 	 do
 	   (format t "GENERATION: ~d~%" i)
 	   (loop
@@ -424,9 +454,12 @@
 		  (format t "------------------------------------~%")
 		  (loop 
 		     for image in training-set
-		     with img = nil
+		     with img = nil and img-weights
 		     do
-		       (format t "Transforming ~A with ~%~A~%" (getf image :image) str-features)
+		       (format t "Transforming ~A~%Image Class: ~d~%With ~%~A~%"
+			       (getf image :image)
+			       (car (assoc (getf image :label) category-index-pairs))
+			       str-features)
 		       (setq img (pre-process-image str-features (getf image :image)))
 
 		       ;; print any errors from python
@@ -438,64 +471,93 @@
 				       :test 'equal))
 			 (return-from continue))
 		       
-		       (format t "Training perceptron..~%~%")
-		       (setf (perceptron-weights (getf creature :perceptron))
+		       (format t "Training perceptron..~%")
+		       (setq img-weights
 			     (train (getf creature :perceptron)
 				    (list ':image img ':label (getf image ':label))
-				    .3)))
+				    learning-rate
+				    bias))
+		       (setf (perceptron-weights (getf creature :perceptron))
+			     (set-weights img-weights
+					  (subseq (perceptron-weights (getf creature :perceptron))
+				       (length img-weights)))))
 		  (format t "------------------------------------~%")
 		  (format t "Testing on holdout set of size ~d~%" (length holding-set))
 		  (format t "------------------------------------~%")
 		  (loop
 		     for hold in holding-set
 		     with tp = 0 and tn = 0 and fp = 0 and fn = 0
+		     with accuracy = 0 and precision = 0 and recall = 0
+		     with precision-defined = t and recall-defined = t
 		     with img = nil
+		     with err-pen = 5 and reg-pen = 1 and alpha = .4
 		     do
-		       (format t "Transforming ~A with ~%~A~%...~%~%" (getf hold :image) str-features)
 		       (setq img (pre-process-image str-features (getf hold :image)))
 		       (let (predicted ground hold-label)
 			 (setq hold-label (getf hold :label))
 			 (setq predicted (classify img (getf creature :perceptron) 1))
 			 (setq ground (car (assoc hold-label category-index-pairs)))
+			 (format t "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
+			       (getf hold :image)
+			       ground
+			       str-features)
 			 (cond ((and (= predicted 0) (= ground 0))
-				(incf tn))
+				(setq tn (+ tn 1)))
 			       ((and (= predicted 1) (= ground 1))
-				(incf tp))
+				(setq tp (+ tp 1)))
 			       ((and (= predicted 0) (= ground 1))
-				(incf fn))
+				(setq fn (+ fn 1)))
 			       ((and (= predicted 1) (= ground 0))
-				(incf fp))))
+				(setq fp (+ fp 1)))))
 		     finally
-		       (setf (getf creature :fitness) (calculate-fitness tp tn fp fn 5))
-		       (format t "Fitness score for ~A~%~d~%~%" str-features (getf creature :fitness))
-		       (push (getf creature :fitness) fs)
-		       (push tp tps)
-		       (push tn tns)
-		       (push fp fps)
-		       (push fn fns)
-		       (when (>= (getf creature :fitness) 500)
-			 (format t "Added creature to ECO Features!~%")
-			 (push creature eco-feats)))))
+		       (let (ordinary-fitness-score)
+			 (setq ordinary-fitness-score (calculate-fitness tp tn fp fn err-pen alpha))
+			 (setf (getf creature :fitness) (- ordinary-fitness-score
+							   (* (sqrt (length (getf creature :features)))
+							      reg-pen)))
+			 (format t "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
+			 (format t "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
+			 (push (getf creature :fitness) fs)
+			 
+			 (cond ((= 0 tp fp)
+				(setq precision-defined nil)
+				(setq precision 0))
+			       ((= 0 tp fn)
+				(setq recall-defined nil)
+				(setq recall 0)))
+			 (setq accuracy (/ (+ tp tn) (+ tp tn fp fn)))
+			 (when recall-defined
+			   (setq recall (/ tp (+ fn tp))))
+			 (when precision-defined
+			   (setq precision (/ tp (+ tp fp))))
+			 (format t "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" tp tn fp fn)
+			 (format t "Accuracy: ~d Precision: ~d Recall: ~d~%~%" accuracy precision recall)
+			 (push accuracy accuracys)
+			 (push precision precisions)
+			 (push recall recalls)
+			 (when (> (getf creature :fitness) 500)
+			   (format t "Added creature to ECO Features!~%")
+			   (push creature eco-feats))))))
+	   
 	   (setq avg-fitness (/ (reduce '+ fs) (length fs)))
-	   (setq avg-precision (/ (/ (reduce '+ tps) (length tps))
-				  (+ (/ (reduce '+ tps) (length tps))
-				     (/ (reduce '+ fps) (length fps)))))
-	   (setq avg-recall (/ (/ (reduce '+ tps) (length tps))
-				  (+ (/ (reduce '+ tps) (length tps))
-				     (/ (reduce '+ fns) (length fns)))))
-	   (setq avg-accuracy (/ (+ (/ (reduce '+ tps) (length tps))
-				    (/ (reduce '+ tns) (length tns)))
-				 (+ (/ (reduce '+ tps) (length tps))
-				    (/ (reduce '+ tns) (length tns))
-				    (/ (reduce '+ fns) (length fns))
-				    (/ (reduce '+ fps) (length fps)))))
+	   (setq avg-precision (/ (reduce '+ precisions) (length precisions)))
+	   (setq avg-recall (/ (reduce '+ recalls) (length recalls)))
+	   (setq avg-accuracy (/ (reduce '+ accuracys) (length accuracys)))
+	   
 	   (setq err-fitness (standard-dev fs avg-fitness))
-	   (write-to-file "generations.csv" i avg-fitness err-fitness avg-precision avg-recall avg-accuracy)
-	   (setq candidate-feats (generate-next-generation candidate-feats .01 transforms)))
+	   (setq err-precision (standard-dev precisions avg-precision))
+	   (setq err-recall (standard-dev recalls avg-recall))
+	   (setq err-accuracy (standard-dev accuracys avg-accuracy))
+	   (write-to-file "generations.csv" i
+			  avg-fitness err-fitness
+			  avg-precision err-precision
+			  avg-recall err-recall
+			  avg-accuracy err-accuracy)
+	   (setq candidate-feats (generate-next-generation candidate-feats .35 max-child-size transforms i)))
       (save-features eco-feats)
       (let (boost max-classifiers)
 	(setq max-classifiers 100)
-	(create-file "boost.csv" 'Tau 'Nothing 'Nothing 'Precision 'Recall 'Accuracy)
+	(create-file "boost.csv" 'Tau 'Nothing 'Nothing 'Precision 'nothing 'Recall 'nothing 'Accuracy 'nothing)
 	(loop
 	   for tau from 0 to (min max-classifiers (length eco-feats))
 	   do
@@ -527,12 +589,12 @@
 			  ((and (= predicted 1) (= ground 0))
 			   (incf fp))))
 		finally
-		  (write-to-file "boost.csv" tau 0 0 (/ tp (+ tp fp)) (/ tp (+ fp tp)) (/ (+ tp tn) (+ tp tn fp fn)))
+		  (write-to-file "boost.csv" tau 0 0 (/ tp (+ tp fp)) 0 (/ tp (+ fp tp)) 0 (/ (+ tp tn) (+ tp tn fp fn)) 0)
 		  (format t "~%ADA BOOST CONFUSION MATRIX:~%~A~%~%"
 			  (list (list tp fp) (list fn tn)))))))))
 
 #|
-(random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack))))
+(random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/085.goat/*.*" goat) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/084.giraffe/*.*" giraffe))))
 
 (evolve-features 10 10 '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack)))
 
@@ -572,4 +634,6 @@
 		  ;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
 		  ))
 
+;; Read error 
+(pre-process-image "[[DILATION, 29],[MEDIAN-BLUR, 22],[INTEGRAL-BLUR],[GRADIENT, 65],[INTEGRAL-BLUR],[EQUALIZE-HIST, 81],]" #P"/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/003_0026.jpg")
 |#

@@ -2,6 +2,7 @@ import numpy as np
 import sys
 import argparse
 import os
+import ctypes
 
 from skimage import data, color
 from skimage import io
@@ -130,7 +131,7 @@ for i, transform in enumerate(transforms):
                 img[int(rr), int(cc)] = 255
         elif transform[0].lower() == "equalize-hist":
             exitStr = "(applying exposure.equalize_hist)"
-            img = exposure.equalize_hist(img, int(transform[1]))
+            img = exposure.equalize_hist(img, ctypes.c_uint64(int(transform[1])))
         elif transform[0].lower() == "laplace-edge":
             exitStr = "(applying laplace)"
             img = laplace(img, int(transform[1]))
@@ -145,5 +146,6 @@ print "(",
 for intensity in np.nditer(img):
     print str(intensity) + " ",
 print ")"
+print
 #except:
 #    print exitStr

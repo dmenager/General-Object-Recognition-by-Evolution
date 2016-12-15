@@ -7,8 +7,13 @@
 \usepackage{listings}
 \usepackage{enumitem}
 \usepackage{color}
+\usepackage{mathtools}
+\usepackage{algorithm, algpseudocode}
+
 \definecolor{mygreen}{RGB}{28,172,0} % color values Red, Green, Blue
 \definecolor{mylilas}{RGB}{170,55,241}
+
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}
 
 \ifCLASSINFOpdf
   \usepackage[pdftex]{graphicx}
@@ -24,7 +29,7 @@
 \IEEEauthorblockA{School of Electrical Engineering and Computer Science\\
 University of Kansas\\
 Lawrence, Kansas 66045\\
-Email: dmenager@ku.edu}}
+Email: dhmenager@ku.edu}}
 
 \lstset{language=Matlab,%
     %basicstyle=\color{red},
@@ -84,7 +89,169 @@ In a formal setting, genetic algorithms solve problems by an approach similar to
 
 \subsection{Why it Works}
 Now, we consider why the genetic algorithm works. We do not supply a formal proof, but give a strong intuition. The reason why genetic algorithms work is because in each generation they select the most fit individuals to produce the next. Therefore the average fitness of each sucessive generation is non-decreasing. DO MORE WORK HERE.
-\section{Experimental Setup}
+\section{Experimental Comparison}
+In this section we take the time to compare our experimental setup with that of \cite{lillywhite2013feature}. We begin by discussing the commonalities and procede to discuss the differences.
+\subsection{Comonalities in approach}
+Here we describe, in large part the original paper's implementation and formalisms. In our project, our aim was to remain as faithful to the original theory as possible. We largly embrace the same formalisms, but deviate mostly in the system parameters
+\subsubsection{ECO Features and Perceptrons}
+Perhaps, the strongest commonality to mention is that our work is a reimplementation of Lillywhite et al. The task is to devise an evolutionaray algorithm to construct a set of features that improve a classification algorithm's ability to distinguish object classes. For this reason, the features are called {\it ECO features}, because they are {\bf E}volutionarily {\bf Co}nstructed. An ECO feature, $V$ is simply an ordering of image transformations with their accompanying parameters and is fomalized as
+\begin{equation}
+  \begin{split}
+    V_n & = T_n(V_{n-1}, \phi)\\
+    V_{n-1} & = T_{n-1}(V_{n-2},\phi_{n-1})\\
+    \vdots\\
+    V_1 & = T_1(I(x_1,y_1,x_2,y_2), \phi_{1}),
+  \end{split}
+  \label{eq:eco}
+\end{equation}
+where $I$ is the original image, $T_i$ is an image transform, and $\phi$ is the set of corresponding parameters to that transform. Lillywhite et al. also describe the ability to apply these ECO features to particular subregions of the image. The subregion is defined by $x_1, x_2, y_1,$ and $y_2$, but we chose not to implement the subregions feature because the original authors obtained comprable results with the subregions turned off as well.
+
+Furthermore, Lillywhite et al provide a table to show the set of transformations their algorithm employs. In our implementation we only use a subset of these transforms because we utilized another library. Our specific transformations are shown in Table~\ref{tab:transforms}. 
+\begin{table}[t]
+  \centering
+  \begin{tabular}{c c c c}
+    \hline
+    Image Transform & $\abs{\phi}$ & Image Transform & $\abs{\phi}$\\
+    \hline
+    Gabor & 9 & Rank Order & 1\\
+    Gradient & 2 & Sobel & 1\\
+    Gaussian & 2 & Erosion & 2\\
+    Histogram & 2 & Hough Line & 1\\
+    Hough Circle & 3 & Equalize Histogram & 2\\
+    Median Blur & 2 & Laplace Edge & 2\\
+    Integral Blur & 1 & Dilation & 2\\
+    Canny Edge & 4\\
+    \hline
+  \end{tabular}
+  \caption{Image transforms used in project}
+  \label{tab:transforms}
+\end{table}
+
+Since this is a genetic algorithm, first generation is initialized randomly. Each candidate ECO feature has an associated perceptron that is used to evaluate the quality of the transformed images. Each pixel in the image is multiplied by its corrsponding perceptron weights, the result of which is summed. If the sum is greater than a threshold, ``1'' is the output, otherwise the perceptron outputs 0. The equation for the perceptron output, $\alpha$ is described as the following:
+\begin{equation}
+  \alpha =
+  \begin{cases}
+    1, & \text{if } W \cdot V + b > 0\\
+    0, & \text{otherswise}
+    \end{cases},
+  \label{eq:perceptron-output}
+\end{equation}
+where $W$ is the perceptron weight vector. Furthermore, each image has a class associated that can be discretized as, $\beta$ which is ``1'' for the first image class and ``0'' for the second. So, the error, $\delta$ of the perceptron is written as
+\begin{equation}
+  \delta = \beta - \alpha.
+  \label{eq:perceptron-error}
+\end{equation}
+This means that training the perceptron is characterized by
+\begin{equation}
+  W[i] = W[i] + \lambda \cdot \delta \cdot V[i],
+  \label{eq:perceptron-update}
+\end{equation}
+where $\lambda$ is the learning rate. This parameter controls the volatility of the network. High learning rates will cause a network to rapidly oscilate between extreme values. This comes as a trade off to small learning rates that move to convergence. Both high and low learning rates have their disadvantages, however. High learning rates may never converge because the weights bounce around the space of network weights. On the other hand, small learning rates may converge to local maxima and never find an optimal solution. So, the best learning rate, must be found experimentally.
+
+Because Equation~\ref{eq:perceptron-output} through Equation~\ref{eq:perceptron-update} define the fundamental procedures that operate on perceptrons, a fitness function can be defined. Lillywhite et al. specify theirs as
+
+\begin{equation}
+  s = \frac{t_p \cdot 500}{f_n + t_p} + \frac{t_n \cdot 500}{p \cdot f_p+ t_n},
+  \label{eq:fitness-lilly}
+\end{equation}
+because it is unaffected by unbalanced classes, and it includes an extra penalty for false positives. In this equation, $t_p, t_n, f_p,$ and $f_n$ stand for true positives, true negative,s false posiives, and false negatives respectfully.
+
+\subsubsection{Genetic Algorithm Structure}
+Although we discussed the basic genetic algorithm in the previous section, we have yet to define its specific implementation. Lillywhite et al.'s algorithm for evolving features is as follows
+\begin{algorithm}[t]
+  \caption{Genetic Algorithm Outline}
+  \label{alg:genetic}
+  \begin{algorithmic}
+    \For{Size of population}
+    \State Randomly create creatures
+    \EndFor
+    \For{Number of generations}
+    \For{Every Creature}
+    \For{Every Training Image}
+    \State Process the image with feature transformations
+    \State Train creature's perceptron
+    \EndFor
+    \For{Every holding image}
+    \State Process the image with feature transformations
+    \EndFor
+    \State Calculate fitness score
+    \State Save creature if sufficiently fit
+    \EndFor
+    \State Create the next generation
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+  \caption{Train Adaboost}
+  \label{alg:ada}
+  \begin{algorithmic}
+    \State Set of training images M
+    \For{Every training image, m}
+    \State Initialize $\delta_m[m]=1/|M|$
+    \EndFor
+    \For{$x=0 \text{ to } X$}
+    \For{Every perceptron, $w$}
+    \For{Every training image, $m$}
+    \If{Wrongly classified}
+    \State $\delta_w+=\delta_M[m]$
+    \EndIf
+    \EndFor
+    \EndFor
+    \State Select perceptron with minimum Error
+    \If{$\delta_\omega[\Omega]>=50\%$}
+    \State BREAK
+    \EndIf
+    \State Calculate perceptron coefficient using
+    \State$\rho=\frac{1}{2} \cdot ln\frac{1-\delta_w}{\delta_w}$
+    \For{Every training image, $m$}
+    \State
+    $c =
+    \begin{cases}
+      1, & \text{if classified correctly}\\
+      -1, & \text{otherswise}
+    \end{cases}$
+    \State $\delta_M[m]=\frac{\delta_M[m]*e^{-\rho \cdot c}}{\text{Normalization factor}}$
+    \EndFor
+    \EndFor
+  \end{algorithmic}
+\end{algorithm}
+
+Note, that in Algorithm~\ref{alg:genetic} Lillywhite et al. do not specify how they split their data into training and testing, and more importantly, they do not explain how they process images through the perceptron. Each image has a different size, so in our implementation we fix the number of perceptrons to $\text{max image size } \times \text{max image size}$. Also, observe that once sufficiently fit features are found, the are saved in the list of true ECO features. This list is passed on to create the Adaboost classifier. This procedure is described by Agorithm~\ref{alg:ada}.
+
+Our project is a reimplementation of \cite{lillywhite2013feature} that aimed to remain faithful to as many of the theoretical commitments made by the original authors. For the most part we succeeded in achieving this goal, however, external factors such as the time constraint placed on the completion of this project forced us to scale down a few minor aspects of the code. We describe these in the following subsection.
+
+\subsection{Differences}
+We begin with a discussion on the difference in parameter settings. Lillywhite et al.'s results are generated by an initial population of 1000 individuals who evolve over 100 generations. An algorithmically complex code such as this with the same parameter settings would take the majority of a month to complete on our machines. So, the first modification was to create a population of 10 individuals who evolve over 10 generations. The reader might correctly suspect that this is much too short a time to reach convergence. We do not expect our experiment to converge. Rather, we aim to demonstrate the process required to run this genetic algorithm, and we aim to provide preliminary evidence that the evolutionary process is working.
+
+Secondly, Lillywhite et al. state that they only required the initial generation to be no more than eight features long. They also report that the genetic algorithm naturally preferred features with fewer transforms. We are skeptical of this partially because the fitness function does not penalize an individual on the size of it features. We chose to be more restrictive, and specify that all individuals may have at maximum five feature transformations. This specification was a way to artificially append a constraint to the fitness function.
+
+Thirdly, the original paper lacks details with respect to creating generations. The paper does not describe the order in which parents are recombined, does not discuss the number of children two individuals can generate, and the paper is silent about what types of mutations are allowed. In our case, we decided to allow mutations to the transformations and the transformation parameters. We do not add or delete transformations.
+
+Finally, because of the small number of individuals and generations we have a learning rate of 1, mutation probability of .35, add no bias term in Equation~\ref{eq:perceptron-output}, and we include no penalty in our fitness function. The reason why we disagree with the fitness function described in Equation~\ref{eq:fitness-lilly} is because it has poor worst-case performance. We identify two worst-case scenarios:
+\begin{enumerate}
+\item The perceptron output seems random
+\item The perceptron output is constant
+\end{enumerate}
+
+In the first case, the fitness function performs reasonably well and penalizes the perceptron for its deviations. The second case contains two subcases, one for each value. If the perceptron output is 1, then Equation~\ref{eq:fitness-lilly} becomes
+
+\begin{equation}
+  \begin{split}
+    s & = \frac{t_p \cdot 500}{f_n + t_p} + \frac{t_n \cdot 500}{p \cdot f_p+ t_n}\\
+    & = \frac{t_p \cdot 500}{0 + t_p} + \frac{0 \cdot 500}{p \cdot f_p + 0}\\
+    & = 500(1)
+  \end{split},
+  \label{eq:fitness-lilly-decompose}
+\end{equation}
+
+Population size of 10, for 10 generations
+Each individual had size 5 max
+Mutation
+No bias, learning rate 1, no penalty
+Defined new fitness function
+
+
 \section{Results}
 \section{Conclusion}
 \section{Appendix}
