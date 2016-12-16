@@ -241,16 +241,32 @@ In the first case, the fitness function performs reasonably well and penalizes t
     s & = \frac{t_p \cdot 500}{f_n + t_p} + \frac{t_n \cdot 500}{p \cdot f_p+ t_n}\\
     & = \frac{t_p \cdot 500}{0 + t_p} + \frac{0 \cdot 500}{p \cdot f_p + 0}\\
     & = 500(1)
-  \end{split},
+  \end{split}.
   \label{eq:fitness-lilly-decompose}
 \end{equation}
+For the second subcase, we obtain
 
-Population size of 10, for 10 generations
-Each individual had size 5 max
-Mutation
-No bias, learning rate 1, no penalty
-Defined new fitness function
+\begin{equation}
+  \begin{split}
+    s & = \frac{t_p \cdot 500}{f_n + t_p} + \frac{t_n \cdot 500}{p \cdot f_p+ t_n}\\
+    & = \frac{0 \cdot 500}{f_n + 0} + \frac{t_n \cdot 500}{p \cdot 0 + t_n}\\
+    & = 500(1)
+  \end{split},
+  \label{eq:fitness-lilly-decompose2}
+\end{equation}
+So, in both cases, if the perceptron does not try to distinguish any classes, it recieves a fitness score of 500. On the other hand, a perceptron that attempts to distinguish the two classes will be penalized more because the denominator will include terms for Type I and Type II errors. Furthermore, false positives are penalized heavily. Since the initial generation is created randomly, the features that pass on their traits will be the ones that hav no ability to distinguish classes, and the average fitness of the generations will remain at 500. We have empirically seen that ECO features with this trait contain more than 6 transforms.
 
+Our new fitness function shown in Equation~\ref{eq:fitness-menager} avoids this issue in a three-fold manner. First, we include $L_2$ regularization on the length of the feature. Second, our fitness function accounts for the accuracy, precision, and recall of the perceptron, and third, provides a weighting mechanism to prefer accuracy over precision and recall, (and vise versa). This formulation
+\begin{equation}
+  \begin{split}
+    s & = \alpha(\frac{t_p + t_n}{t_p + t_n + f_p + f_n}) +\\
+    &(1 - \alpha)(\frac{t_p}{t_p + f_p} + \frac{t_p}{t_p + f_n}) + \lambda \sqrt{\sum_{\bf T} |T_i|}
+    \end{split}
+  \label{eq:fitness-menager}
+\end{equation}
+penalizes errors in classification, but also heavily penalizes indistinguishabliity by applying some weightage on the accuracy, precision and recall. In our work, we set $\alpha$ to .4, and the regularization parameter, $\lambda$ is set to 1.
+
+After using this fitness function, we realized that the length of the ECO features were still quite long, so this motivated us to impose the strict 5-feature limit, as mentioned earlier. As future work, we would like to experiment with other regularizers, like using the $L_1$ norm. The downside to this is that this fitness function is sensitive to class imbalance, unlike the one used by Lillywhite et al. 
 
 \section{Results}
 \section{Conclusion}
