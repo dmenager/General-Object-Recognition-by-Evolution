@@ -312,7 +312,7 @@ The experiment was completed using images of the American flag, and random backp
 
 We have two main results, one for the ECO feature construction step, and the other is the AdaBoost classifier metrics. We ommit a dedicated Discussion section and embed it herein.
 \subsection{ECO Features}
-These results are positive and negative. The good news is that the genetic algorithm works as intended. Figure~\ref{fig:fitness} shows the average fitness of the population increase from generation to generation. The problem is that at some point it hits a cieling. Recall that when its time to produce the next generation, the most fit individuals are selected from the current generation. In this case ``most fit'' means a fitness score above the mean. Results like these imply two things:
+These results are positive and negative. The good news is that the genetic algorithm works as intended. Figure~\ref{fig:fitness} shows the average fitness of the population increase from generation to generation. The problem is that at some point it hits a cieling. Recall that when its time to produce the next generation, the most fit individuals are selected from the current generation. In this case ``most fit'' means a fitness score above the mean. Results like these imply a number of things:
 \begin{description}
 \item[Insufficient transforms]
   Our transformations list was a subset of the original authors. It could be that the transformations not present in our experiment bound the fitness at the observed point. Most of the transformations in our list were blurs, edge detection, and filters for detecting geometric shapes. The original authors had these and others like the fourier transform.
@@ -326,10 +326,27 @@ These results are positive and negative. The good news is that the genetic algor
   Another factor related to this is the number of generations. In our case, the results could only be showing a local maximum. At some time in the future, the fitness may have increased. With five samples, it is hard to draw conclusions about the future performance of the system.
 \end{description}
 
-In our case, we potentially suffer from all four. This is such a complex conundrum that, at this point we are not certain the degree to which these factors affect our result in Figure~\ref{fig:fitness}. Lillywhite et al. report state-of-the-art performance with this technique, so even if they have a bad fitness function, it may be the case that their mutations, cross over procedure, population size, and number of genenerations were sufficiently good to overcome this. This seems like a reasonable conjecture because Figure~\ref{fig:fitness} shows a pretty high standard deviation. An approximately optimal selection criteria would be able to take advantage of this to produce better quality generations. 
+In our case, we potentially suffer from all four. This is such a complex conundrum that, at this point we are not certain the degree to which these factors affect our result in Figure~\ref{fig:fitness}. Lillywhite et al. report state-of-the-art performance with this technique, so even if they have a bad fitness function, it may be the case that their mutations, cross over procedure, population size, and number of genenerations were sufficiently good to overcome this. This seems like a reasonable conjecture because Figure~\ref{fig:fitness} shows a pretty high standard deviation. An approximately optimal selection criteria would be able to take advantage of this to produce better quality generations. In our case, we see that the standard deviation is decreasing slightly each generation, signalling the end of genetic diversity in the population.
 
-Moreover, after selecting bad ish features
-\subsection{}
+Furthermore, Figure~\ref{fig:metrics} shows some standard performance metrics of the ECO features from generation to generation. This figure also brings good and bad news. The good news is that the fitness function forces the average precision to increase. On the other hand the recall is low and the average accuracy is more or less constant over the generations. Once again, the performance reaches another ceiling.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{average-fitness.png}
+\caption{Average fitness of the ECO features through five generations.}
+\label{fig:fitness}
+\end{figure}
+\begin{figure}[b]
+\centering
+\includegraphics[width=\columnwidth]{average-performance.png}
+\caption{Average performance metrics of the ECO features through five generations.}
+\label{fig:metrics}
+\end{figure}
+As a quick review, precision is the percent of predicted classes that match the true image class. In other words a classifier may make errors, but is precise if whenever it classifies something as belonging to class 'A', that object actually belongs to image class 'A'. Recall is the cousin of this idea, and measures what percant of a particular image class, the classifier captures. For example, a classifier that always predicts one image class has high recall because its predictions cover the entire space of that image class. On average, observe that the ECO feature precision hovers around 65\% in the later generations, and the recall is absolutely underwhelming in all generations. This yields, on average, a classifier with low accuracy, as we see in Figure~\ref{fig:metrics}.
+\subsection{AdaBoost}
+Because of the poor quality of ECO features, the performance of the AdaBoost classifier will also be poor. Its confusion matrix is shown in Table~\ref{tab:confusion}. At first glance it is surprising that the classifier only predicts image class 0, which is backpacks in this case. After further inspection, it becomes overwhelmingly clear that this performance is directly caused by the poor quality of ECO features.
+
+
+From Algorithm~\ref{alg:ada}, recall there is a threshold on the perceptron error. If the minimum perceptron error is greater than the 50\%, in this case, then AdaBoost does not attempt to learn the perceptron coefficients necesary for ensemble classification. Each perceptron coefficient $\rho_i$ is initialized to zero, so when the classification rule is applied, the response is zero. This is the reason why AdaBoost is performing poorly. 
 
 \section{Conclusion}
 \section{Appendix}
