@@ -391,14 +391,18 @@
 	(setq max-classifiers 100)
 	(create-file "boost.csv" 'Tau 'Nothing 'Nothing 'Precision 'nothing 'Recall 'nothing 'Accuracy 'nothing)
 	(loop
-	   for tau from 0 to (min max-classifiers (length eco-feats))
+	   for tau from 0 to 0 ;(min max-classifiers (length eco-feats))
 	   do
-	     (format t "Initializing Adaboost classifier from ~d ECO-Features~%" (length eco-feats))
+	     (format t "TAU: ~d~%" tau)
+	     (format t "Initializing Adaboost classifier from ~d ECO-Features~%"
+		     (length eco-feats))
 	     (setq boost (initialize-ada-boost max-classifiers eco-feats))
 	     
-	     (format t "Adaboost weights before training.~%~A~%" (ada-boost-classifier-weights boost))
+	     (format t "Adaboost weights before training.~%~A~%"
+		     (ada-boost-classifier-weights boost))
 	     (train-ada-boost boost training-set tau)
-	     (format t "Adaboost weights after training.~%~A~%" (ada-boost-classifier-weights boost))
+	     (format t "Adaboost weights after training.~%~A~%"
+		     (ada-boost-classifier-weights boost))
 
 	     (format t "------------------------------------~%")
 	     (format t "Testing Adaboost on ~d images~%" (length holding-set))
@@ -413,17 +417,38 @@
 		    (setq predicted (ada-classify boost hold tau))
 		    (setq ground (car (assoc hold-label category-index-pairs)))
 		    (cond ((and (= predicted 0) (= ground 0))
-			   (incf tn))
+			   (setq tn (+ tn 1)))
 			  ((and (= predicted 1) (= ground 1))
-			   (incf tp))
+			   (setq tp (+ tp 1)))
 			  ((and (= predicted 0) (= ground 1))
-			   (incf fn))
+			   (setq fn (+ fn 1)))
 			  ((and (= predicted 1) (= ground 0))
-			   (incf fp))))
+			   (setq fp (+ fp 1)))))
 		finally
-		  (write-to-file "boost.csv" tau 0 0 (/ tp (+ tp fp)) 0 (/ tp (+ fp tp)) 0 (/ (+ tp tn) (+ tp tn fp fn)) 0)
 		  (format t "~%ADA BOOST CONFUSION MATRIX:~%~A~%~%"
-			  (list (list tp fp) (list fn tn)))))))
+			  (list (list tp fp) (list fn tn)))
+		  (let (precision recall accuracy)
+		    (setq precision 0)
+		    (setq recall 0)
+		    (setq accuracy 0)
+		    (cond ((not (= 0 tp fn))
+			   (format t "Recall Defined~%")
+			   (setq recall (/ tp (+ fn tp))))
+			  ((not (= 0 tp fp))
+			   (format t "Precision Defined~%")
+			   (setq precision (/ tp (+ tp fp))))
+			  ((not (= 0 tp tn fp fn))
+			   (format t "Accuracy Defined~%")
+			   (setq accuracy (/ (+ tp tn) (+ tp tn fp fn)))))
+		    (write-to-file "boost.csv"
+				   tau
+				   0
+				   0
+				   precision
+				   0
+				   recall
+				   0
+				   accuracy 0))))))
 
 #| Genetic algorithm to evolve eco-features |#
 

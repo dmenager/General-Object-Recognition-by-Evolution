@@ -89,8 +89,11 @@
 		     (setf (nth i perceptron-errors) (+ (nth i perceptron-errors) (nth m image-errors))))))
 	 (let (min-perceptron-err coeff)
 	   (setq min-perceptron-err (apply 'min perceptron-errors))
+
 	   (when (>=  min-perceptron-err .5)
+	     (format t "Bad perceptrons. Minimum Error too high, so training failed, but continuing anyway.~%")
 	     (return-from outer))
+
 	   (setq coeff (calculate-classifier-weight min-perceptron-err))
 	   (setf (nth (position min-perceptron-err perceptron-errors)
 		      (ada-boost-classifier-weights boost))
