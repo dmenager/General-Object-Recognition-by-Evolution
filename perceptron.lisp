@@ -29,7 +29,7 @@
 (defun classify (img p b stream)
   (let (weighted)
     (setq weighted (weighted-sum img p))
-    (format stream "Weighted sum + bias: ~d~%~%" (+ weighted b))
+    ;;(format stream "Weighted sum + bias: ~d~%~%" (+ weighted b))
     (if (> (+ weighted b) 0)
 	1
 	0)))

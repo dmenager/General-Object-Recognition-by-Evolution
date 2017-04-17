@@ -548,9 +548,9 @@
 	       (lambda (creature str-features training-set holding-set category-index-pairs std-out)
 		 (block continue
 		   (setq str-features (make-str-features (getf creature :features)))
-		   (format std-out "------------------------------------~%")
-		   (format std-out "Training on ~d images using LMS~%" (length training-set))
-		   (format std-out "------------------------------------~%")
+		   ;;(format std-out "------------------------------------~%")
+		   ;;(format std-out "Training on ~d images using LMS~%" (length training-set))
+		   ;;(format std-out "------------------------------------~%")
 		   (loop
 		      named LMS
 		      with epoch = 0
@@ -560,7 +560,7 @@
 		      ;; random shuffle training data for each epoch, so we don't memorize the order of examples
 			(setq training-set (random-shuffle training-set))
 			(setq epoch (+ epoch 1))
-			(format std-out "Epoch: ~d~%" epoch)
+			;;(format std-out "Epoch: ~d~%" epoch)
 			(setq prev-fitness cur-fitness)
 			(loop
 			   for image in training-set
@@ -568,18 +568,18 @@
 			   with predicted = nil and ground = nil
 			   do
 			     (setq ground (getf image :label))
-			     (format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%"
+			     #|(format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%"
 				     (getf image :image)
 				     (car (assoc (getf image :label) category-index-pairs))
-				     str-features)
+				     str-features)|#
 			     (setq img (pre-process-image str-features (getf image :image)))
 			     
 			   ;; print any errors from python
 			     (when (not (numberp (first img)))
-			       (format std-out "~A~%~%" img)
+			       ;;(format std-out "~A~%~%" img)
 			       ;; basically, return failure. and remove creature in main thread
 			       (sb-thread:return-from-thread (list ':remove creature)))
-			     (format std-out "Training perceptron..~%")
+			     ;;(format std-out "Training perceptron..~%")
 			     (setq predicted (classify img
 						       (getf creature :perceptron)
 						       bias
@@ -602,13 +602,13 @@
 						(subseq (perceptron-weights (getf creature :perceptron))
 							(length img-weights)))))
 			(setq cur-fitness (calculate-fitness lmstp lmstn lmsfp lmsfn 0))
-			(format std-out "Fitness for creature on epoch ~d: ~d~%" epoch cur-fitness)
+			;;(format std-out "Fitness for creature on epoch ~d: ~d~%" epoch cur-fitness)
 		      when (stop? prev-fitness cur-fitness 3)
 		      do
 			(return-from LMS))
-		   (format std-out "------------------------------------~%")
-		   (format std-out "Testing on holdout set of size ~d~%" (length holding-set))
-		   (format std-out "------------------------------------~%")
+		   ;;(format std-out "------------------------------------~%")
+		   ;;(format std-out "Testing on holdout set of size ~d~%" (length holding-set))
+		   ;;(format std-out "------------------------------------~%")
 		   (loop
 		      for hold in holding-set
 		      with hold-tp = 0 and hold-tn = 0 and hold-fp = 0 and hold-fn = 0
@@ -622,10 +622,10 @@
 			  (setq hold-label (getf hold :label))
 			  (setq predicted (classify img (getf creature :perceptron) 1 std-out))
 			  (setq ground (car (assoc hold-label category-index-pairs)))
-			  (format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
+			  #|(format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
 				  (getf hold :image)
 				  ground
-				  str-features)
+				  str-features)|#
 			  (cond ((and (= predicted 0) (= ground 0))
 				 (setq hold-tn (+ hold-tn 1)))
 				((and (= predicted 1) (= ground 1))
@@ -641,7 +641,7 @@
 			  (setf (getf creature :fitness) (- ordinary-fitness-score
 							    (* (length (getf creature :features))
 							       reg-pen)))
-			  (format std-out "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
+			  ;;(format std-out "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
 			  (format std-out "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
 			  (cond ((= 0 hold-tp hold-fp)
 				 (setq precision-defined nil)
@@ -654,8 +654,8 @@
 			    (setq hold-recall (/ hold-tp (+ hold-fn hold-tp))))
 			  (when precision-defined
 			    (setq hold-precision (/ hold-tp (+ hold-tp hold-fp))))
-			  (format std-out "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" hold-tp hold-tn hold-fp hold-fn)
-			  (format std-out "Accuracy: ~d Precision: ~d Recall: ~d~%~%" hold-accuracy hold-precision hold-recall)
+			  ;;(format std-out "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" hold-tp hold-tn hold-fp hold-fn)
+			  ;;(format std-out "Accuracy: ~d Precision: ~d Recall: ~d~%~%" hold-accuracy hold-precision hold-recall)
 			  ;; return the fit individual on join
 			  (when (> (getf creature :fitness) fitness-criterion)
 			    (format std-out "Added creature to ECO Features!~%")
@@ -664,9 +664,12 @@
 	       :arguments (list c str-feats training-set holding-set category-index-pairs *standard-output*)))	 
 
        ;; join all threads
-	 (setq generation-results (mapcar #'(lambda (thread)
-					      (sb-thread:join-thread thread))
-					  (sb-thread:list-all-threads)))
+	 (loop
+	    for thread in (sb-thread:list-all-threads)
+	    when (not (sb-thread:main-thread-p thread))
+	    do (format t "Joining ~A~%" thread) and
+	    collect (sb-thread:join-thread thread) into results
+	    finally (setq generation-results results))
        ;; calculate generation metrics
 	 (setq avg-fitness (/ (reduce '+ (mapcan #'(lambda (result)
 						     (when (getf result :fitness)
