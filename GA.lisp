@@ -539,6 +539,7 @@
        with err-fitness = 0 and err-precision = 0 and err-recall = 0 and err-accuracy = 0
        do
 	 (format t "GENERATION: ~d~%" i)
+	 ;;(break "~A~%"(sb-thread:list-all-threads))
 	 (loop
 	    for c in candidate-feats
 	    with str-feats = nil
@@ -642,7 +643,7 @@
 							    (* (length (getf creature :features))
 							       reg-pen)))
 			  ;;(format std-out "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
-			  (format std-out "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
+			  ;;(format std-out "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
 			  (cond ((= 0 hold-tp hold-fp)
 				 (setq precision-defined nil)
 				 (setq hold-precision 0))
@@ -658,16 +659,25 @@
 			  ;;(format std-out "Accuracy: ~d Precision: ~d Recall: ~d~%~%" hold-accuracy hold-precision hold-recall)
 			  ;; return the fit individual on join
 			  (when (> (getf creature :fitness) fitness-criterion)
-			    (format std-out "Added creature to ECO Features!~%")
+			    ;;(format std-out "Added creature to ECO Features!~%")
 			    (setq eco creature))
 			  (sb-thread:return-from-thread (list ':eco eco ':fitness (getf creature :fitness) ':accuracy hold-accuracy ':precision hold-precision ':recall hold-recall))))))
-	       :arguments (list c str-feats training-set holding-set category-index-pairs *standard-output*)))	 
-
+	       :arguments (list c str-feats training-set holding-set category-index-pairs *standard-output*)
+	       :name (concatenate 'string "T" (write-to-string (position c candidate-feats 
+									 :test 'equal)))))	 	 
        ;; join all threads
 	 (loop
 	    for thread in (sb-thread:list-all-threads)
-	    when (not (sb-thread:main-thread-p thread))
-	    do (format t "Joining ~A~%" thread) and
+	    when (and (not (string-equal "swank-indentation-cache-thread" 
+					(sb-thread:thread-name thread)))
+		      (not (string-equal "reader-thread" 
+					(sb-thread:thread-name thread)))
+		      (not (string-equal "control-thread" 
+					(sb-thread:thread-name thread)))
+		      (not (string-equal "Swank Sentinel" 
+					(sb-thread:thread-name thread)))
+		      (not (sb-thread:main-thread-p thread)))
+	    do (format t "Joining thread ~A.~%" (sb-thread:thread-name thread)) and
 	    collect (sb-thread:join-thread thread) into results
 	    finally (setq generation-results results))
        ;; calculate generation metrics
@@ -691,6 +701,8 @@
 							(getf result :accuracy)))
 						  generation-results))
 			       (length generation-results)))
+	 (format t "Average Fitness: ~d~%Average Precision: ~d~%Average Recall: ~d~%Average Accuracy: ~d~%"
+		 avg-fitness avg-precision avg-recall avg-accuracy)
        ;; remove all failed solutions
 	 (mapcar #'(lambda (creature)
 		     (setq candidate-feats
@@ -728,6 +740,9 @@
 							(getf result :accuracy)))
 						  generation-results)
 					  avg-accuracy))
+
+	 (format t "Fitness Error: ~d~%Precision Error: ~d~%Recall Error: ~d~%Accuracy Error: ~d~%"
+		 err-fitness err-precision err-recall err-accuracy)
 	 (write-to-file "generations.csv" i
 			avg-fitness err-fitness
 			avg-precision err-precision
@@ -745,8 +760,8 @@
 	split-index)
     ;; Read in the data, create training and test set
     (multiple-value-bind (images category-index-pairs)
-	(read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag)
-		       ("/home/david/Code/courses/eecs_741/256_ObjectCategories/001.ak47/*.*" backpack)))
+	(read-images '(("/home/david/Code/741/256_ObjectCategories/002.american-flag/*.*" american-flag)
+		       ("/home/david/Code/741/256_ObjectCategories/001.ak47/*.*" ak-47)))
       (setq dataset (random-shuffle images))
       (setq split-index (round (* .7 (length dataset))))
       (setq training-set (subseq dataset 0 split-index))
