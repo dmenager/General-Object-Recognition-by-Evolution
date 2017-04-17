@@ -15,6 +15,7 @@
         (t out)))
 
 #| Perform weighted sum of classifiyer |#
+
 ;; xis = inputs to perceptron
 ;; p = perceptron
 (defun weighted-sum (xis p)
@@ -24,10 +25,11 @@
 ;; img = input image
 ;; p = perceptron
 ;; b = bias term
-(defun classify (img p b)
+;; stream = output stream
+(defun classify (img p b stream)
   (let (weighted)
     (setq weighted (weighted-sum img p))
-    (format t "Weighted sum + bias: ~d~%~%" (+ weighted b))
+    (format stream "Weighted sum + bias: ~d~%~%" (+ weighted b))
     (if (> (+ weighted b) 0)
 	1
 	0)))
@@ -39,22 +41,19 @@
 ;; p = perceptron
 ;; img = input image
 (defun update-weights (l a ground p img)
-  (loop
-     for weight-i in (perceptron-weights p)
-     for im-pix in img
-     with weights = nil
-     do (setq weights (cons (+ weight-i (* (- ground a) l im-pix)) weights))
-     finally (return weights)))
+  (let (update)
+    (setq update (mapcar #'(lambda (img-pix) (* l (- ground a) img-pix)) img))
+    (mapcar '+ (perceptron-weights p) update)))
 
 #| Train the perceptron |#
 
 ;; p = perceptron
 ;; img = input image
+;; predicted = output of perceptron
 ;; learning-rate = learning rate
-;; bias = bias
-(defun train (p img learning-rate bias)
+(defun train (p img predicted learning-rate)
   (update-weights learning-rate
-		  (classify (getf img :image) p bias)
+		  predicted
 		  (getf img :label)
 		  p
 		  (getf img :image)))
@@ -65,8 +64,7 @@
 ;; fp = false positive
 ;; fn = false negative
 ;; p = penalty
-;; alpha = weight on accuracy vs (precision + recall)
-(defun calculate-fitness (tp tn fp fn p alpha)
+(defun calculate-fitness (tp tn fp fn p)
   (setq p 0)
   (let (accuracy precision recall precision-defined recall-defined)
     (setq precision-defined t)
@@ -79,11 +77,16 @@
 	   (setq recall 0)))
     (setq accuracy (/ (+ tp tn) (+ tp tn fp fn)))
     (when recall-defined
-      (setq recall (/ tp (+ fn tp))))
+      (setq recall (/ tp (+ tp fn))))
     (when precision-defined
       (setq precision (/ tp (+ tp fp))))
+    (if (and (= recall 1) (< precision 1))
+	;; I've guessed only the positive class
+	0
+	(float (* 500 (+ accuracy precision recall))))
+    #|
     (* 500 (+ (* alpha accuracy)
-	      (* (- 1 alpha) (+ precision recall))))))
+	      (* (- 1 alpha) (+ precision recall))))|#))
 
 #| Initialize perceptron weights |#
 
@@ -99,7 +102,7 @@
 
 ;; img = image to initialize perceptron
 ;; p = perceptron
-(defun initialize-perceptron (num-inputs p)
+(defun initialize-perceptron-2 (num-inputs p)
   (setf (perceptron-weights p)
 	(loop
 	   for i from 0 to num-inputs

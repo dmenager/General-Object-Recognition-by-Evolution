@@ -121,7 +121,7 @@
     (write-string "]" string-stream)
     (get-output-stream-string string-stream)))
 
-#| Close the pipe, close all streams to the process|#
+#| Close the pipe, close all streams to the process |#
 
 ;; process = process started by sb-ext
 (defun kill-and-close-process (process)
@@ -166,6 +166,7 @@
 	  ((null form)
 	   (setq res (reverse res)))
 	(push form res)))
+    ;; center the image
     res))
 
 (defun create-transforms (transforms)
@@ -187,10 +188,12 @@
 	    do
 	      (cond
 		((equal 'img type))
+		((equal 'percent type)
+		 (push (float (/ (random 100) 100)) type-vals))
 		((equal 'float type)
-		 (push (random 100.00) type-vals))
+		 (push (random 20.00) type-vals))
 		((equal 'int type)
-		 (push (random 100) type-vals))
+		 (push (random 20) type-vals))
 		((listp type)
 		 (push (nth (random (length type)) type) type-vals))
 		((equal 'bool type)
@@ -208,7 +211,6 @@
   (let (max-width max-height x1 x2 y1 y2 perceptron feats region)
     (setq max-width 1000)
     (setq max-height 1000)
-
     (format t "Creating Transformations.~%")
     (setq feats (create-transforms transforms))
     (when (<= (length feats) max-child-size)
@@ -222,7 +224,7 @@
       (setq perceptron (make-perceptron))
       (format t "Initializing weights.~%")
       (if  enable-roi
-	   (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+	   (initialize-perceptron (* max-width max-height) perceptron)
 	   (initialize-perceptron (* max-width max-height) perceptron))    
       (if enable-roi
 	  (list ':features (cons region feats) ':perceptron perceptron ':fitness 0)
@@ -263,7 +265,7 @@
       (setq perceptron (make-perceptron))
       (format t "Initializing weights.~%")
       (if enable-roi
-	  (initialize-perceptron (* (- x2 x1) (- y2 y1)) perceptron)
+	  (initialize-perceptron (* max-width max-height) perceptron)
 	  (initialize-perceptron (* max-width max-height) perceptron))
       (list ':features (append first-half second-half) ':perceptron perceptron ':fitness 0))))
 
@@ -314,9 +316,11 @@
 			       (cond
 				 ((equal 'img type))
 				 ((equal 'float type)
-				  (setq type-val (random 100.00)))
+				  (setq type-val (random 20.00)))
+				 ((equal 'percent type)
+				  (setq type-val (float (/ (random 100) 100))))
 				 ((equal 'int type)
-				  (setq type-val (random 100)))
+				  (setq type-val (random 20)))
 				 ((listp type)
 				  (setq type-val (nth (random (length type)) type)))
 				 ((equal 'bool type)
@@ -333,7 +337,7 @@
 	     (format t "No mutations performed. Returning Child.~%~%")
 	     c1)))))
 
-#| Create the next generation of creatures|#
+#| Create the next generation of creatures |#
 
 ;; candidate-feats = current generation
 ;; mutation-prob = mutation probability of child
@@ -366,7 +370,7 @@
 		   with child = nil
 		   when (not (equal creature1 creature2))
 		   do
-		     (setq child (mutate (cross-over creature1 creature2 max-child-size nil) mutation-prob transforms))
+		     (setq child (mutate (cross-over creature1 creature2 max-child-size nil) mutation-prob transforms))		     
 		     (when (not (null child))
 		       (setq next-gen (cons child next-gen)))
 		     (when (and stop-at-min
@@ -380,7 +384,7 @@
 	   (format t "Next generation contains ~d members~%"(length next-gen))
 	   (return-from business-time next-gen)))))
 
-#| Run the AdaBoost classifier|#
+#| Run the AdaBoost classifier |#
 
 ;; eco-feats = evolutionarily constructed features
 ;; training-set = training set for classification trainig
@@ -450,6 +454,14 @@
 				   0
 				   accuracy 0))))))
 
+#| Determine to terminate the LMS algorithm |#
+
+;; prev-fitness = the fitness of the individual in the last epoch
+;; cur-fitness = the fitness of the individual in the current epoch
+;; delta-percentage = the percentage difference in fitness required to continue LMS 
+(defun stop? (prev-fitness cur-fitness delta)
+  (when (< (* 100 (/ (- cur-fitness prev-fitness) prev-fitness)) delta) t))
+
 #| Genetic algorithm to evolve eco-features |#
 
 ;; size-pop = size of population
@@ -467,15 +479,16 @@
     ;; leaving out optional params
     ;; scikit-image transforms
     (setq bias 0)
-    (setq learning-rate 1)
+    (setq learning-rate (/ .1 (length training-set)))
     (setq max-child-size 5)
     (setq transforms
-	  (list '(:name gabor :types (img float float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
+	  (list '(:name gabor :types (img percent float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
 		'(:name gradient :types (img int))
+		'(:name radon :types (img))
 		;;'(:name square-root :types (img)) 
 		'(:name gaussian :types (img int))
 		'(:name histogram :types (img int))
-		'(:name hough-circle :types (img float bool))
+		;;'(:name hough-circle :types (img float bool))
 		;;'(:name normalize :num-params 0 :types '(())) ;; Ask Dr. Wang about this
 		;;'(:name convert :num-params 0 :types '(())) ;; Ask Dr. Wang about this
 		'(:name median-blur :types (img int))
@@ -483,18 +496,18 @@
 		'(:name canny-edge :types (img float float float))
 		'(:name rank-order :types (img))
 		;;'(:name resize :types (img)) ;; implement size tuple
-		;;'(:name log :num-params 0 :types '(())) ;; Ask Dr. Wang about this
+		'(:name log :num-params 0 :types (img int))
 		'(:name sobel :types (img))
 		;;'(:name DoG :num-params 0 :types '(())) ;; Ask Theodore about this
 		'(:name erosion :types (img int))
-		;;'(:name threshold-adaptive :types (img int ("generic" "gaussian" "mean" "median")))
+		'(:name threshold-adaptive :types (img int ("generic" "gaussian" "mean" "median")))
 		'(:name hough-line :types (img))
 		;;'(:name fourier :num-params 0 :types '(())) ;; Ask Theodore about this
 		'(:name equalize-hist :types (img int))
 		'(:name laplace-edge :types (img int))
 		;;'(:name distance-transform :types '(()) ;; Ask Dr. Wang about this
 		'(:name dilation :types (img int))
-		;;'(:name corner-harris :types (img ("k" "eps") float float float)) ;; investigate this later
+		'(:name corner-harris :types (img ("k" "eps") percent float float))
 		;;'(:name census-transform :types '(())) ;; Ask Dr. Wang about this
 		;;'(:name pixel-statistics :types '(())) ;; Ask Dr. Wang about this
 		))
@@ -521,117 +534,197 @@
 		 'Accuracy-Error)
     (loop
        for i from 0 to (- num-generations 1)
+       with generation-results = nil
        with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
        with err-fitness = 0 and err-precision = 0 and err-recall = 0 and err-accuracy = 0
-       with fs = nil
-       with precisions = nil and recalls = nil and accuracys = nil
        do
 	 (format t "GENERATION: ~d~%" i)
 	 (loop
-	    for creature in candidate-feats
-	    with str-features = nil
+	    for c in candidate-feats
+	    with str-feats = nil
 	    do
-	      (block continue
-		(setq str-features (make-str-features (getf creature :features)))
-		(format t "------------------------------------~%")
-		(format t "Training on ~d images~%" (length training-set))
-		(format t "------------------------------------~%")
-		(loop 
-		   for image in training-set
-		   with img = nil and img-weights
-		   do
-		     (format t "Transforming ~A~%Image Class: ~d~%With ~%~A~%"
-			     (getf image :image)
-			     (car (assoc (getf image :label) category-index-pairs))
-			     str-features)
-		     (setq img (pre-process-image str-features (getf image :image)))
-		     
-		   ;; print any errors from python
-		     (when (not (numberp (first img)))
-		       (format t "~A~%~%" img)
-		       (setq candidate-feats
-			     (remove creature candidate-feats
-				     :key #'(lambda (x) (getf x :features))
-				     :test 'equal))
-		       (return-from continue))
-		     
-		     (format t "Training perceptron..~%")
-		     (setq img-weights
-			   (train (getf creature :perceptron)
-				  (list ':image img ':label (getf image ':label))
-				  learning-rate
-				  bias))
-		     (setf (perceptron-weights (getf creature :perceptron))
-			   (set-weights img-weights
-					(subseq (perceptron-weights (getf creature :perceptron))
-						(length img-weights)))))
-		(format t "------------------------------------~%")
-		(format t "Testing on holdout set of size ~d~%" (length holding-set))
-		(format t "------------------------------------~%")
-		(loop
-		   for hold in holding-set
-		   with tp = 0 and tn = 0 and fp = 0 and fn = 0
-		   with accuracy = 0 and precision = 0 and recall = 0
-		   with precision-defined = t and recall-defined = t
-		   with img = nil
-		   with err-pen = 5 and reg-pen = 1 and alpha = .4
-		   do
-		     (setq img (pre-process-image str-features (getf hold :image)))
-		     (let (predicted ground hold-label)
-		       (setq hold-label (getf hold :label))
-		       (setq predicted (classify img (getf creature :perceptron) 1))
-		       (setq ground (car (assoc hold-label category-index-pairs)))
-		       (format t "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
-			       (getf hold :image)
-			       ground
-			       str-features)
-		       (cond ((and (= predicted 0) (= ground 0))
-			      (setq tn (+ tn 1)))
-			     ((and (= predicted 1) (= ground 1))
-			      (setq tp (+ tp 1)))
-			     ((and (= predicted 0) (= ground 1))
-			      (setq fn (+ fn 1)))
-			     ((and (= predicted 1) (= ground 0))
-			      (setq fp (+ fp 1)))))
-		   finally
-		     (let (ordinary-fitness-score)
-		       (setq ordinary-fitness-score (calculate-fitness tp tn fp fn err-pen alpha))
-		       (setf (getf creature :fitness) (- ordinary-fitness-score
-							 (* (length (getf creature :features))
-							    reg-pen)))
-		       (format t "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
-		       (format t "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
-		       (push (getf creature :fitness) fs)
-		       
-		       (cond ((= 0 tp fp)
-			      (setq precision-defined nil)
-			      (setq precision 0))
-			     ((= 0 tp fn)
-			      (setq recall-defined nil)
-			      (setq recall 0)))
-		       (setq accuracy (/ (+ tp tn) (+ tp tn fp fn)))
-		       (when recall-defined
-			 (setq recall (/ tp (+ fn tp))))
-		       (when precision-defined
-			 (setq precision (/ tp (+ tp fp))))
-		       (format t "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" tp tn fp fn)
-		       (format t "Accuracy: ~d Precision: ~d Recall: ~d~%~%" accuracy precision recall)
-		       (push accuracy accuracys)
-		       (push precision precisions)
-		       (push recall recalls)
-		       (when (> (getf creature :fitness) 450)
-			 (format t "Added creature to ECO Features!~%")
-			 (push creature eco-feats))))))
-	 
-	 (setq avg-fitness (/ (reduce '+ fs) (length fs)))
-	 (setq avg-precision (/ (reduce '+ precisions) (length precisions)))
-	 (setq avg-recall (/ (reduce '+ recalls) (length recalls)))
-	 (setq avg-accuracy (/ (reduce '+ accuracys) (length accuracys)))
-	 
-	 (setq err-fitness (standard-dev fs avg-fitness))
-	 (setq err-precision (standard-dev precisions avg-precision))
-	 (setq err-recall (standard-dev recalls avg-recall))
-	 (setq err-accuracy (standard-dev accuracys avg-accuracy))
+	    ;; Start a thread and do LMS
+	      (sb-thread:make-thread
+	       (lambda (creature str-features training-set holding-set category-index-pairs std-out)
+		 (block continue
+		   (setq str-features (make-str-features (getf creature :features)))
+		   (format std-out "------------------------------------~%")
+		   (format std-out "Training on ~d images using LMS~%" (length training-set))
+		   (format std-out "------------------------------------~%")
+		   (loop
+		      named LMS
+		      with epoch = 0
+		      with prev-fitness = 1 and cur-fitness = 1
+		      with lmstp = 0 and lmstn = 0 and lmsfp = 0 and lmsfn = 0
+		      do
+		      ;; random shuffle training data for each epoch, so we don't memorize the order of examples
+			(setq training-set (random-shuffle training-set))
+			(setq epoch (+ epoch 1))
+			(format std-out "Epoch: ~d~%" epoch)
+			(setq prev-fitness cur-fitness)
+			(loop
+			   for image in training-set
+			   with img = nil and img-weights = nil
+			   with predicted = nil and ground = nil
+			   do
+			     (setq ground (getf image :label))
+			     (format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%"
+				     (getf image :image)
+				     (car (assoc (getf image :label) category-index-pairs))
+				     str-features)
+			     (setq img (pre-process-image str-features (getf image :image)))
+			     
+			   ;; print any errors from python
+			     (when (not (numberp (first img)))
+			       (format std-out "~A~%~%" img)
+			       ;; basically, return failure. and remove creature in main thread
+			       (sb-thread:return-from-thread (list ':remove creature)))
+			     (format std-out "Training perceptron..~%")
+			     (setq predicted (classify img
+						       (getf creature :perceptron)
+						       bias
+						       std-out))
+			     (cond ((and (= predicted 0) (= ground 0))
+				    (setq lmstn (+ lmstn 1)))
+				   ((and (= predicted 1) (= ground 1))
+				    (setq lmstp (+ lmstp 1)))
+				   ((and (= predicted 0) (= ground 1))
+				    (setq lmsfn (+ lmsfn 1)))
+				   ((and (= predicted 1) (= ground 0))
+				    (setq lmsfp (+ lmsfp 1))))
+			     (setq img-weights
+				   (train (getf creature :perceptron)
+					  (list ':image img ':label (getf image ':label))
+					  predicted
+					  learning-rate))
+			     (setf (perceptron-weights (getf creature :perceptron))
+				   (set-weights img-weights
+						(subseq (perceptron-weights (getf creature :perceptron))
+							(length img-weights)))))
+			(setq cur-fitness (calculate-fitness lmstp lmstn lmsfp lmsfn 0))
+			(format std-out "Fitness for creature on epoch ~d: ~d~%" epoch cur-fitness)
+		      when (stop? prev-fitness cur-fitness 3)
+		      do
+			(return-from LMS))
+		   (format std-out "------------------------------------~%")
+		   (format std-out "Testing on holdout set of size ~d~%" (length holding-set))
+		   (format std-out "------------------------------------~%")
+		   (loop
+		      for hold in holding-set
+		      with hold-tp = 0 and hold-tn = 0 and hold-fp = 0 and hold-fn = 0
+		      with hold-accuracy = 0 and hold-precision = 0 and hold-recall = 0
+		      with precision-defined = t and recall-defined = t
+		      with img = nil
+		      with err-pen = 5 and reg-pen = 1
+		      do
+			(setq img (pre-process-image str-features (getf hold :image)))
+			(let (predicted ground hold-label)
+			  (setq hold-label (getf hold :label))
+			  (setq predicted (classify img (getf creature :perceptron) 1 std-out))
+			  (setq ground (car (assoc hold-label category-index-pairs)))
+			  (format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
+				  (getf hold :image)
+				  ground
+				  str-features)
+			  (cond ((and (= predicted 0) (= ground 0))
+				 (setq hold-tn (+ hold-tn 1)))
+				((and (= predicted 1) (= ground 1))
+				 (setq hold-tp (+ hold-tp 1)))
+				((and (= predicted 0) (= ground 1))
+				 (setq hold-fn (+ hold-fn 1)))
+				((and (= predicted 1) (= ground 0))
+				 (setq hold-fp (+ hold-fp 1)))))
+		      finally
+			(let (ordinary-fitness-score eco fitness-criterion)
+			  (setq fitness-criterion 1000)
+			  (setq ordinary-fitness-score (calculate-fitness hold-tp hold-tn hold-fp hold-fn err-pen))
+			  (setf (getf creature :fitness) (- ordinary-fitness-score
+							    (* (length (getf creature :features))
+							       reg-pen)))
+			  (format std-out "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
+			  (format std-out "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
+			  (cond ((= 0 hold-tp hold-fp)
+				 (setq precision-defined nil)
+				 (setq hold-precision 0))
+				((= 0 hold-tp hold-fn)
+				 (setq recall-defined nil)
+				 (setq hold-recall 0)))
+			  (setq hold-accuracy (/ (+ hold-tp hold-tn) (+ hold-tp hold-tn hold-fp hold-fn)))
+			  (when recall-defined
+			    (setq hold-recall (/ hold-tp (+ hold-fn hold-tp))))
+			  (when precision-defined
+			    (setq hold-precision (/ hold-tp (+ hold-tp hold-fp))))
+			  (format std-out "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" hold-tp hold-tn hold-fp hold-fn)
+			  (format std-out "Accuracy: ~d Precision: ~d Recall: ~d~%~%" hold-accuracy hold-precision hold-recall)
+			  ;; return the fit individual on join
+			  (when (> (getf creature :fitness) fitness-criterion)
+			    (format std-out "Added creature to ECO Features!~%")
+			    (setq eco creature))
+			  (sb-thread:return-from-thread (list ':eco eco ':fitness (getf creature :fitness) ':accuracy hold-accuracy ':precision hold-precision ':recall hold-recall))))))
+	       :arguments (list c str-feats training-set holding-set category-index-pairs *standard-output*)))	 
+
+       ;; join all threads
+	 (setq generation-results (mapcar #'(lambda (thread)
+					      (sb-thread:join-thread thread))
+					  (sb-thread:list-all-threads)))
+       ;; calculate generation metrics
+	 (setq avg-fitness (/ (reduce '+ (mapcan #'(lambda (result)
+						     (when (getf result :fitness)
+						       (getf result :fitness)))
+						 generation-results))
+			      (length generation-results)))
+	 (setq avg-precision (/ (reduce '+ (mapcan #'(lambda (result)
+						       (when (getf result :precision)
+							 (getf result :precision)))
+						   generation-results))
+				(length generation-results)))
+	 (setq avg-recall (/ (reduce '+ (mapcan #'(lambda (result)
+						    (when (getf result :recall)
+						      (getf result :recall)))
+						generation-results))
+			     (length generation-results)))
+	 (setq avg-accuracy (/ (reduce '+ (mapcan #'(lambda (result)
+						      (when (getf result :accuracy)
+							(getf result :accuracy)))
+						  generation-results))
+			       (length generation-results)))
+       ;; remove all failed solutions
+	 (mapcar #'(lambda (creature)
+		     (setq candidate-feats
+			   (remove creature candidate-feats
+				   :key #'(lambda (x) (getf x :features))
+				   :test 'equal)))
+		 (mapcan #'(lambda (result)
+			     (when (getf result :remove)
+			       (getf result :remove)))
+			 generation-results))
+       ;; update eco-features 
+	 (mapcar #'(lambda (eco)
+		     (setq eco-feats (cons eco eco-feats)))
+		 (mapcan #'(lambda (result)
+			     (when (getf result :eco)
+			       (getf result :eco)))
+			 generation-results))
+	 (setq err-fitness (standard-dev (mapcan #'(lambda (result)
+						     (when (getf result :fitness)
+						       (getf result :fitness)))
+						 generation-results)
+					 avg-fitness))
+	 (setq err-precision (standard-dev (mapcan #'(lambda (result)
+						       (when (getf result :precision)
+							 (getf result :precision)))
+						   generation-results)
+					   avg-precision))
+	 (setq err-recall (standard-dev (mapcan #'(lambda (result)
+						    (when (getf result :recall)
+						      (getf result :recall)))
+						generation-results)
+					avg-recall))
+	 (setq err-accuracy (standard-dev (mapcan #'(lambda (result)
+						      (when (getf result :accuracy)
+							(getf result :accuracy)))
+						  generation-results)
+					  avg-accuracy))
 	 (write-to-file "generations.csv" i
 			avg-fitness err-fitness
 			avg-precision err-precision
@@ -650,7 +743,7 @@
     ;; Read in the data, create training and test set
     (multiple-value-bind (images category-index-pairs)
 	(read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag)
-		       ("/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/*.*" backpack)))
+		       ("/home/david/Code/courses/eecs_741/256_ObjectCategories/001.ak47/*.*" backpack)))
       (setq dataset (random-shuffle images))
       (setq split-index (round (* .7 (length dataset))))
       (setq training-set (subseq dataset 0 split-index))
@@ -660,7 +753,7 @@
 	     (setq eco-features (load-features)))
 	    (t
 	     (setq eco-features
-		   (evolve-features 5 5  category-index-pairs training-set holding-set))))
+		   (evolve-features 20 20  category-index-pairs training-set holding-set))))
       (ada-boost eco-features training-set holding-set category-index-pairs))))
 
 #|
@@ -706,4 +799,7 @@
 
 ;; Read error 
 (pre-process-image "[[DILATION, 29],[MEDIAN-BLUR, 22],[INTEGRAL-BLUR],[GRADIENT, 65],[INTEGRAL-BLUR],[EQUALIZE-HIST, 81],]" #P"/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/003_0026.jpg")
+
+;; Hough circle test
+(pre-process-image "[[SOBEL],[HOUGH-CIRCLE, 76.34508, NIL],]" #P"/home/david/Code/courses/eecs_741/256_ObjectCategories/003.backpack/003_0026.jpg")
 |#

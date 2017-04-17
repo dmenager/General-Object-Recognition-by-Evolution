@@ -35,7 +35,7 @@
 			   (setq img (pre-process-image str-features (getf image :image)))
 			   (format t "Transforming ~A with ~%~A~%" (getf image :image) str-features)
 			   (format t "Ground: ~d~%" (getf image :label))
-			   (* (classify img (getf classifier :perceptron) 1) weight))
+			   (* (classify img (getf classifier :perceptron) 1 *standard-output*) weight))
 		       (ada-boost-classifier-weights boost)
 		       (ada-boost-classifiers boost))) tau)
 	1
