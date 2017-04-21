@@ -2,40 +2,42 @@
 (load "ada")
 
 (defun standard-dev (l mean)
-  (sqrt (* (/ 1.0d0 (length l))
+  (float (sqrt (* (/ 1.0d0 (length l))
          (reduce #'+ l
              :key (lambda (x)
-                (expt (- x mean) 2))))))
+                (expt (- x mean) 2)))))))
 
 #| Create data output file for genetic algorithm |#
 
 ;; filename = name of file to create
 ;; index = index column
+;; num-ppl = number of individuals in genration
 ;; avg-fitness = average fitness column
 ;; avg-precision = precision column
 ;; avg-recall = recall column
 ;; avg-accuracy = accuracy column
-(defun create-file (filename index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)
+(defun create-file (filename index num-ppl avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)
   (with-open-file (stream filename
 			  :direction :output
 			  :if-exists :supersede
 			  :if-does-not-exist :create)
-    (format stream "~S,~S,~S,~S,~S,~S,~S,~S,~S~%" index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)))
+    (format stream "~S,~S,~S,~S,~S,~S,~S,~S,~S,~S~%" index num-ppl avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)))
 
 #| Write data output file for genetic algorithm |#
 
 ;; filename = name of file to create
 ;; index = data for index column
+;; num-ppl = number of individuals in genration
 ;; avg-fitness = data for average fitness column
 ;; avg-precision = data for precision column
 ;; avg-recall = data for recall column
 ;; avg-accuracy = data for accuracy column
-(defun write-to-file (filename index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)
+(defun write-to-file (filename index num-ppl avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)
   (with-open-file (stream filename
 			  :direction :output
 			  :if-exists :append
 			  :if-does-not-exist :error)
-    (format stream "~d,~d,~d,~d,~d,~d,~d,~d,~d~%" index avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)))
+    (format stream "~d,~d,~d,~d,~d,~d,~d,~d,~d,~d~%" index num-ppl avg-fitness err-fitness avg-precision err-precision avg-recall err-recall avg-accuracy err-accuracy)))
 
 #| Save evolved features to a file |#
 
@@ -393,7 +395,7 @@
 (defun ada-boost (eco-feats training-set holding-set category-index-pairs)
   (let (boost max-classifiers)
 	(setq max-classifiers 100)
-	(create-file "boost.csv" 'Tau 'Nothing 'Nothing 'Precision 'nothing 'Recall 'nothing 'Accuracy 'nothing)
+	(create-file "boost.csv" 'Tau 'Nothing 'Nothing 'Nothing 'Precision 'nothing 'Recall 'nothing 'Accuracy 'nothing)
 	(loop
 	   for tau from 0 to 0 ;(min max-classifiers (length eco-feats))
 	   do
@@ -446,6 +448,7 @@
 			   (setq accuracy (/ (+ tp tn) (+ tp tn fp fn)))))
 		    (write-to-file "boost.csv"
 				   tau
+				   0
 				   0
 				   0
 				   precision
@@ -524,6 +527,7 @@
 		(format t "Creature FAILED~%~%"))))
     (create-file "generations.csv"
 		 'Generations
+		 'Number-Individuals
 		 'Average-Fitness
 		 'Fitness-Error
 		 'Average-Precision
@@ -537,6 +541,7 @@
        with generation-results = nil
        with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
        with err-fitness = 0 and err-precision = 0 and err-recall = 0 and err-accuracy = 0
+       with my-threads = nil
        do
 	 (format t "GENERATION: ~d~%" i)
 	 ;;(break "~A~%"(sb-thread:list-all-threads))
@@ -545,162 +550,158 @@
 	    with str-feats = nil
 	    do
 	    ;; Start a thread and do LMS
-	      (sb-thread:make-thread
-	       (lambda (creature str-features training-set holding-set category-index-pairs std-out)
-		 (block continue
-		   (setq str-features (make-str-features (getf creature :features)))
-		   ;;(format std-out "------------------------------------~%")
-		   ;;(format std-out "Training on ~d images using LMS~%" (length training-set))
-		   ;;(format std-out "------------------------------------~%")
-		   (loop
-		      named LMS
-		      with epoch = 0
-		      with prev-fitness = 1 and cur-fitness = 1
-		      with lmstp = 0 and lmstn = 0 and lmsfp = 0 and lmsfn = 0
-		      do
-		      ;; random shuffle training data for each epoch, so we don't memorize the order of examples
-			(setq training-set (random-shuffle training-set))
-			(setq epoch (+ epoch 1))
-			;;(format std-out "Epoch: ~d~%" epoch)
-			(setq prev-fitness cur-fitness)
-			(loop
-			   for image in training-set
-			   with img = nil and img-weights = nil
-			   with predicted = nil and ground = nil
-			   do
-			     (setq ground (getf image :label))
-			     #|(format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%"
-				     (getf image :image)
-				     (car (assoc (getf image :label) category-index-pairs))
-				     str-features)|#
-			     (setq img (pre-process-image str-features (getf image :image)))
-			     
-			   ;; print any errors from python
-			     (when (not (numberp (first img)))
-			       ;;(format std-out "~A~%~%" img)
-			       ;; basically, return failure. and remove creature in main thread
-			       (sb-thread:return-from-thread (list ':remove creature)))
-			     ;;(format std-out "Training perceptron..~%")
-			     (setq predicted (classify img
-						       (getf creature :perceptron)
-						       bias
-						       std-out))
-			     (cond ((and (= predicted 0) (= ground 0))
-				    (setq lmstn (+ lmstn 1)))
-				   ((and (= predicted 1) (= ground 1))
-				    (setq lmstp (+ lmstp 1)))
-				   ((and (= predicted 0) (= ground 1))
-				    (setq lmsfn (+ lmsfn 1)))
-				   ((and (= predicted 1) (= ground 0))
-				    (setq lmsfp (+ lmsfp 1))))
-			     (setq img-weights
-				   (train (getf creature :perceptron)
-					  (list ':image img ':label (getf image ':label))
-					  predicted
-					  learning-rate))
-			     (setf (perceptron-weights (getf creature :perceptron))
-				   (set-weights img-weights
-						(subseq (perceptron-weights (getf creature :perceptron))
-							(length img-weights)))))
-			(setq cur-fitness (calculate-fitness lmstp lmstn lmsfp lmsfn 0))
-			;;(format std-out "Fitness for creature on epoch ~d: ~d~%" epoch cur-fitness)
-		      when (stop? prev-fitness cur-fitness 3)
-		      do
-			(return-from LMS))
-		   ;;(format std-out "------------------------------------~%")
-		   ;;(format std-out "Testing on holdout set of size ~d~%" (length holding-set))
-		   ;;(format std-out "------------------------------------~%")
-		   (loop
-		      for hold in holding-set
-		      with hold-tp = 0 and hold-tn = 0 and hold-fp = 0 and hold-fn = 0
-		      with hold-accuracy = 0 and hold-precision = 0 and hold-recall = 0
-		      with precision-defined = t and recall-defined = t
-		      with img = nil
-		      with err-pen = 5 and reg-pen = 1
-		      do
-			(setq img (pre-process-image str-features (getf hold :image)))
-			(let (predicted ground hold-label)
-			  (setq hold-label (getf hold :label))
-			  (setq predicted (classify img (getf creature :perceptron) 1 std-out))
-			  (setq ground (car (assoc hold-label category-index-pairs)))
-			  #|(format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
-				  (getf hold :image)
-				  ground
-				  str-features)|#
-			  (cond ((and (= predicted 0) (= ground 0))
-				 (setq hold-tn (+ hold-tn 1)))
-				((and (= predicted 1) (= ground 1))
-				 (setq hold-tp (+ hold-tp 1)))
-				((and (= predicted 0) (= ground 1))
-				 (setq hold-fn (+ hold-fn 1)))
-				((and (= predicted 1) (= ground 0))
-				 (setq hold-fp (+ hold-fp 1)))))
-		      finally
-			(let (ordinary-fitness-score eco fitness-criterion)
-			  (setq fitness-criterion 1000)
-			  (setq ordinary-fitness-score (calculate-fitness hold-tp hold-tn hold-fp hold-fn err-pen))
-			  (setf (getf creature :fitness) (- ordinary-fitness-score
-							    (* (length (getf creature :features))
-							       reg-pen)))
-			  ;;(format std-out "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
-			  ;;(format std-out "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
-			  (cond ((= 0 hold-tp hold-fp)
-				 (setq precision-defined nil)
-				 (setq hold-precision 0))
-				((= 0 hold-tp hold-fn)
-				 (setq recall-defined nil)
-				 (setq hold-recall 0)))
-			  (setq hold-accuracy (/ (+ hold-tp hold-tn) (+ hold-tp hold-tn hold-fp hold-fn)))
-			  (when recall-defined
-			    (setq hold-recall (/ hold-tp (+ hold-fn hold-tp))))
-			  (when precision-defined
-			    (setq hold-precision (/ hold-tp (+ hold-tp hold-fp))))
-			  ;;(format std-out "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" hold-tp hold-tn hold-fp hold-fn)
-			  ;;(format std-out "Accuracy: ~d Precision: ~d Recall: ~d~%~%" hold-accuracy hold-precision hold-recall)
-			  ;; return the fit individual on join
-			  (when (> (getf creature :fitness) fitness-criterion)
-			    ;;(format std-out "Added creature to ECO Features!~%")
-			    (setq eco creature))
-			  (sb-thread:return-from-thread (list ':eco eco ':fitness (getf creature :fitness) ':accuracy hold-accuracy ':precision hold-precision ':recall hold-recall))))))
-	       :arguments (list c str-feats training-set holding-set category-index-pairs *standard-output*)
-	       :name (concatenate 'string "T" (write-to-string (position c candidate-feats 
-									 :test 'equal)))))	 	 
+	      (setq my-threads
+		    (cons (sb-thread:make-thread
+			   (lambda (creature str-features training-set holding-set category-index-pairs std-out)
+			     (block continue
+			       (setq str-features (make-str-features (getf creature :features)))
+			       ;;(format std-out "------------------------------------~%")
+			       ;;(format std-out "Training on ~d images using LMS~%" (length training-set))
+			       ;;(format std-out "------------------------------------~%")
+			       (loop
+				  named LMS
+				  with epoch = 0
+				  with prev-fitness = 1 and cur-fitness = 1
+				  with lmstp = 0 and lmstn = 0 and lmsfp = 0 and lmsfn = 0
+				  do
+				  ;; random shuffle training data for each epoch, so we don't memorize the order of examples
+				    (setq training-set (random-shuffle training-set))
+				    (setq epoch (+ epoch 1))
+				  ;;(format std-out "Epoch: ~d~%" epoch)
+				    (setq prev-fitness cur-fitness)
+				    (loop
+				       for image in training-set
+				       with img = nil and img-weights = nil
+				       with predicted = nil and ground = nil
+				       do
+					 (setq ground (getf image :label))
+					 #|(format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%"
+					 (getf image :image)
+					 (car (assoc (getf image :label) category-index-pairs))
+				       str-features)|#
+					 (setq img (pre-process-image str-features (getf image :image)))
+					 
+				       ;; print any errors from python
+					 (when (not (numberp (first img)))
+					   ;;(format std-out "~A~%~%" img)
+					   ;; basically, return failure. and remove creature in main thread
+					   (sb-thread:return-from-thread (list ':remove creature)))
+				       ;;(format std-out "Training perceptron..~%")
+					 (setq predicted (classify img
+								   (getf creature :perceptron)
+								   bias
+								   std-out))
+					 (cond ((and (= predicted 0) (= ground 0))
+						(setq lmstn (+ lmstn 1)))
+					       ((and (= predicted 1) (= ground 1))
+						(setq lmstp (+ lmstp 1)))
+					       ((and (= predicted 0) (= ground 1))
+						(setq lmsfn (+ lmsfn 1)))
+					       ((and (= predicted 1) (= ground 0))
+						(setq lmsfp (+ lmsfp 1))))
+					 (setq img-weights
+					       (train (getf creature :perceptron)
+						      (list ':image img ':label (getf image ':label))
+						      predicted
+						      learning-rate))
+					 (setf (perceptron-weights (getf creature :perceptron))
+					       (set-weights img-weights
+							    (subseq (perceptron-weights (getf creature :perceptron))
+								    (length img-weights)))))
+				    (setq cur-fitness (calculate-fitness lmstp lmstn lmsfp lmsfn 0))
+				  ;;(format std-out "Fitness for creature on epoch ~d: ~d~%" epoch cur-fitness)
+				  when (stop? prev-fitness cur-fitness 3)
+				  do
+				    (return-from LMS))
+			       ;;(format std-out "------------------------------------~%")
+			       ;;(format std-out "Testing on holdout set of size ~d~%" (length holding-set))
+			       ;;(format std-out "------------------------------------~%")
+			       (loop
+				  for hold in holding-set
+				  with hold-tp = 0 and hold-tn = 0 and hold-fp = 0 and hold-fn = 0
+				  with hold-accuracy = 0 and hold-precision = 0 and hold-recall = 0
+				  with precision-defined = t and recall-defined = t
+				  with img = nil
+				  with err-pen = 5 and reg-pen = 1
+				  do
+				    (setq img (pre-process-image str-features (getf hold :image)))
+				    (let (predicted ground hold-label)
+				      (setq hold-label (getf hold :label))
+				      (setq predicted (classify img (getf creature :perceptron) 1 std-out))
+				      (setq ground (car (assoc hold-label category-index-pairs)))
+				      #|(format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
+				      (getf hold :image)
+				      ground
+				      str-features)|#
+				      (cond ((and (= predicted 0) (= ground 0))
+					     (setq hold-tn (+ hold-tn 1)))
+					    ((and (= predicted 1) (= ground 1))
+					     (setq hold-tp (+ hold-tp 1)))
+					    ((and (= predicted 0) (= ground 1))
+					     (setq hold-fn (+ hold-fn 1)))
+					    ((and (= predicted 1) (= ground 0))
+					     (setq hold-fp (+ hold-fp 1)))))
+				  finally
+				    (let (ordinary-fitness-score eco fitness-criterion)
+				      (setq fitness-criterion 1000)
+				      (setq ordinary-fitness-score (calculate-fitness hold-tp hold-tn hold-fp hold-fn err-pen))
+				      (setf (getf creature :fitness) (- ordinary-fitness-score
+									(* (length (getf creature :features))
+									   reg-pen)))
+				      ;;(format std-out "Ordinary Fitness score for ~A~%~d~%" str-features ordinary-fitness-score)
+				      ;;(format std-out "Regularized Fitness score for ~A~%~d~%" str-features (getf creature :fitness))
+				      (cond ((= 0 hold-tp hold-fp)
+					     (setq precision-defined nil)
+					     (setq hold-precision 0))
+					    ((= 0 hold-tp hold-fn)
+					     (setq recall-defined nil)
+					     (setq hold-recall 0)))
+				      (setq hold-accuracy (/ (+ hold-tp hold-tn) (+ hold-tp hold-tn hold-fp hold-fn)))
+				      (when recall-defined
+					(setq hold-recall (/ hold-tp (+ hold-fn hold-tp))))
+				      (when precision-defined
+					(setq hold-precision (/ hold-tp (+ hold-tp hold-fp))))
+				      ;;(format std-out "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" hold-tp hold-tn hold-fp hold-fn)
+				      ;;(format std-out "Accuracy: ~d Precision: ~d Recall: ~d~%~%" hold-accuracy hold-precision hold-recall)
+				      ;; return the fit individual on join
+				      (when (> (getf creature :fitness) fitness-criterion)
+					;;(format std-out "Added creature to ECO Features!~%")
+					(setq eco creature))
+				      (sb-thread:return-from-thread (list ':eco eco ':fitness (getf creature :fitness) ':accuracy hold-accuracy ':precision hold-precision ':recall hold-recall))))))
+			   :arguments (list c str-feats training-set holding-set category-index-pairs *standard-output*)
+			   :name (concatenate 'string "T" (write-to-string (position c candidate-feats 
+										     :test 'equal))))
+			  my-threads)))	 	 
        ;; join all threads
 	 (loop
-	    for thread in (sb-thread:list-all-threads)
-	    when (and (not (string-equal "swank-indentation-cache-thread" 
-					(sb-thread:thread-name thread)))
-		      (not (string-equal "reader-thread" 
-					(sb-thread:thread-name thread)))
-		      (not (string-equal "control-thread" 
-					(sb-thread:thread-name thread)))
-		      (not (string-equal "Swank Sentinel" 
-					(sb-thread:thread-name thread)))
-		      (not (sb-thread:main-thread-p thread)))
-	    do (format t "Joining thread ~A.~%" (sb-thread:thread-name thread)) and
-	    collect (sb-thread:join-thread thread) into results
-	    finally (setq generation-results results))
+	    until (notany #'sb-thread:thread-alive-p my-threads)
+	    finally
+	      (loop
+		 for thread in my-threads
+		 do (format t "Joining thread ~A.~%" (sb-thread:thread-name thread)) and
+		 collect (sb-thread:join-thread thread) into results
+		 finally (setq generation-results results)))
        ;; calculate generation metrics
-	 (setq avg-fitness (/ (reduce '+ (mapcan #'(lambda (result)
-						     (when (getf result :fitness)
-						       (list (getf result :fitness))))
-						 generation-results))
-			      (length generation-results)))
-	 (setq avg-precision (/ (reduce '+ (mapcan #'(lambda (result)
-						       (when (getf result :precision)
-							 (list (getf result :precision))))
-						   generation-results))
-				(length generation-results)))
-	 (setq avg-recall (/ (reduce '+ (mapcan #'(lambda (result)
-						    (when (getf result :recall)
-						      (list (getf result :recall))))
-						generation-results))
-			     (length generation-results)))
-	 (setq avg-accuracy (/ (reduce '+ (mapcan #'(lambda (result)
-						      (when (getf result :accuracy)
-							(list (getf result :accuracy))))
-						  generation-results))
-			       (length generation-results)))
+	 (setq avg-fitness (float (/ (reduce '+ (mapcan #'(lambda (result)
+							    (when (getf result :fitness)
+							      (list (getf result :fitness))))
+							generation-results))
+				     (length generation-results))))
+	 (setq avg-precision (float (/ (reduce '+ (mapcan #'(lambda (result)
+							      (when (getf result :precision)
+								(list (getf result :precision))))
+							  generation-results))
+				       (length generation-results))))
+	 (setq avg-recall (float (/ (reduce '+ (mapcan #'(lambda (result)
+							   (when (getf result :recall)
+							     (list (getf result :recall))))
+						       generation-results))
+				    (length generation-results))))
+	 (setq avg-accuracy (float (/ (reduce '+ (mapcan #'(lambda (result)
+							     (when (getf result :accuracy)
+							       (list (getf result :accuracy))))
+							 generation-results))
+				      (length generation-results))))
 	 (format t "Average Fitness: ~d~%Average Precision: ~d~%Average Recall: ~d~%Average Accuracy: ~d~%"
 		 avg-fitness avg-precision avg-recall avg-accuracy)
        ;; remove all failed solutions
@@ -744,6 +745,7 @@
 	 (format t "Fitness Error: ~d~%Precision Error: ~d~%Recall Error: ~d~%Accuracy Error: ~d~%"
 		 err-fitness err-precision err-recall err-accuracy)
 	 (write-to-file "generations.csv" i
+			(length candidate-feats)
 			avg-fitness err-fitness
 			avg-precision err-precision
 			avg-recall err-recall
@@ -771,7 +773,7 @@
 	     (setq eco-features (load-features)))
 	    (t
 	     (setq eco-features
-		   (evolve-features 20 20  category-index-pairs training-set holding-set))))
+		   (evolve-features 40 20  category-index-pairs training-set holding-set))))
       (ada-boost eco-features training-set holding-set category-index-pairs))))
 
 #|
