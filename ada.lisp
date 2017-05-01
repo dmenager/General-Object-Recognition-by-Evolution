@@ -35,7 +35,7 @@
 			   (setq img (pre-process-image str-features (getf image :image)))
 			   (format t "Transforming ~A with ~%~A~%" (getf image :image) str-features)
 			   (format t "Ground: ~d~%" (getf image :label))
-			   (* (classify img (getf classifier :perceptron) 1 *standard-output*) weight))
+			   (* (classify img (getf classifier :perceptron) 1) weight))
 		       (ada-boost-classifier-weights boost)
 		       (ada-boost-classifiers boost))) tau)
 	1
@@ -67,23 +67,24 @@
 ;; boost = adaboost classifier
 ;; training = set of training images
 ;; tau = threshold for classification
-(defun train-ada-boost (boost training tau)
+;; max-classifiers = max number of classifiers in model
+(defun train-ada-boost (boost training tau max-classifiers)
   (let (image-errors perceptron-errors)
     (setq image-errors (make-list (length training) :initial-element (/ 1 (length training))))
     (setq perceptron-errors (make-list (length (ada-boost-classifiers boost)) :initial-element 0))
     (loop
        named outer
-       for x from 0 to (- (length (ada-boost-classifiers boost)) 1)
+       for x from 0 to (- max-classifiers 1)
        do
 	 (loop
 	    for classifier in (ada-boost-classifiers boost)
 	    for i from 0 to (- (length perceptron-errors) 1)
 	    do
 	      (loop
-		 for m from 0 to (- (length training) 1)
-		 with image = nil and image-class = nil
+		 for image in training
+		 with image-class and m
 		 do
-		   (setq image (nth m training))
+		   (setq m (position image training :test 'equal))
 		   (setq image-class (getf image :label))
 		   (when (not (= image-class (ada-classify boost image tau)))
 		     (setf (nth i perceptron-errors) (+ (nth i perceptron-errors) (nth m image-errors))))))

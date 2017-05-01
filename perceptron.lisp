@@ -26,10 +26,9 @@
 ;; p = perceptron
 ;; b = bias term
 ;; stream = output stream
-(defun classify (img p b stream)
+(defun classify (img p b)
   (let (weighted)
     (setq weighted (weighted-sum img p))
-    ;;(format stream "Weighted sum + bias: ~d~%~%" (+ weighted b))
     (if (> (+ weighted b) 0)
 	1
 	0)))

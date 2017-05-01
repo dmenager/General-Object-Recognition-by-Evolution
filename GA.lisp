@@ -144,7 +144,7 @@
 				      "ignore"
 				      (concatenate 'string
 						   (sb-unix::posix-getenv "HOME")
-						   "/Code/courses/eecs_741/General-Object-Recognition-by-Evolution/imageTransforms.py")			      
+						   "/Code/741/General-Object-Recognition-by-Evolution/imageTransforms.py")			      
 				      (namestring img)
 				      transforms)
 				:search t
@@ -345,7 +345,7 @@
 ;; mutation-prob = mutation probability of child
 ;; transforms = transformations 
 (defun generate-next-generation (candidate-feats mutation-prob max-child-size transforms generation-num)
-  (let (fitnesses mean-fitness most-fit next-gen min-pop)
+  (let (fitnesses mean-fitness most-fit next-gen)
     (setq fitnesses (mapcar #'(lambda (feat)
 				(getf feat :fitness))
 			    candidate-feats))
@@ -357,33 +357,20 @@
 			  (list creature)))
 		    candidate-feats))
       (format t "Average Fitness of Generation ~d: ~d~%" generation-num mean-fitness)
-      (setq min-pop 5)
       (loop
 	 named business-time
-	 with stop-at-min = nil
-	 while (< (length next-gen) min-pop)
+	 for creature1 in most-fit
 	 do
 	   (loop
-	      named inner
-	      for creature1 in most-fit
+	      for creature2 in most-fit
+	      with child = nil
+	      when (not (equal creature1 creature2))
 	      do
-		(loop
-		   for creature2 in most-fit
-		   with child = nil
-		   when (not (equal creature1 creature2))
-		   do
-		     (setq child (mutate (cross-over creature1 creature2 max-child-size nil) mutation-prob transforms))		     
-		     (when (not (null child))
-		       (setq next-gen (cons child next-gen)))
-		     (when (and stop-at-min
-				(= (length next-gen)
-				   min-pop))
-		       (return-from inner))))
-	   (when (and (not stop-at-min)
-		      (< (length next-gen) min-pop))
-	     (setq stop-at-min t))
-	 finally
-	   (format t "Next generation contains ~d members~%"(length next-gen))
+		(setq child (mutate (cross-over creature1 creature2 max-child-size nil) mutation-prob transforms))		     
+		(when (not (null child))
+		  (setq next-gen (cons child next-gen))))
+	 finally 
+	   (format t "Next generation contains ~d members~%" (length next-gen))
 	   (return-from business-time next-gen)))))
 
 #| Run the AdaBoost classifier |#
@@ -394,7 +381,7 @@
 ;; category-index-pairs =  mapping from image-label to number
 (defun ada-boost (eco-feats training-set holding-set category-index-pairs)
   (let (boost max-classifiers)
-	(setq max-classifiers 100)
+	(setq max-classifiers 50)
 	(create-file "boost.csv" 'Tau 'Nothing 'Nothing 'Nothing 'Precision 'nothing 'Recall 'nothing 'Accuracy 'nothing)
 	(loop
 	   for tau from 0 to 0 ;(min max-classifiers (length eco-feats))
@@ -406,7 +393,7 @@
 	     
 	     (format t "Adaboost weights before training.~%~A~%"
 		     (ada-boost-classifier-weights boost))
-	     (train-ada-boost boost training-set tau)
+	     (train-ada-boost boost training-set tau max-classifiers)
 	     (format t "Adaboost weights after training.~%~A~%"
 		     (ada-boost-classifier-weights boost))
 
@@ -455,7 +442,8 @@
 				   0
 				   recall
 				   0
-				   accuracy 0))))))
+				   accuracy 0)))))
+  t)
 
 #| Determine to terminate the LMS algorithm |#
 
@@ -478,12 +466,13 @@
 	transforms
 	learning-rate
 	bias
-	max-child-size)
+	max-child-size
+	evolution-failed)
     ;; leaving out optional params
     ;; scikit-image transforms
     (setq bias 0)
     (setq learning-rate (/ .1 (length training-set)))
-    (setq max-child-size 5)
+    (setq max-child-size 8)
     (setq transforms
 	  (list '(:name gabor :types (img percent float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
 		'(:name gradient :types (img int))
@@ -537,11 +526,17 @@
 		 'Average-Accuracy
 		 'Accuracy-Error)
     (loop
+       named evolver
        for i from 0 to (- num-generations 1)
        with generation-results = nil
        with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
        with err-fitness = 0 and err-precision = 0 and err-recall = 0 and err-accuracy = 0
        with my-threads = nil
+       when (null candidate-feats)
+       do
+	 (setq evolution-failed t)
+	 (return-from evolver nil)
+       else
        do
 	 (format t "GENERATION: ~d~%" i)
 	 ;;(break "~A~%"(sb-thread:list-all-threads))
@@ -552,7 +547,7 @@
 	    ;; Start a thread and do LMS
 	      (setq my-threads
 		    (cons (sb-thread:make-thread
-			   (lambda (creature str-features training-set holding-set category-index-pairs std-out)
+			   (lambda (creature str-features training-set holding-set category-index-pairs)
 			     (block continue
 			       (setq str-features (make-str-features (getf creature :features)))
 			       ;;(format std-out "------------------------------------~%")
@@ -589,8 +584,7 @@
 				       ;;(format std-out "Training perceptron..~%")
 					 (setq predicted (classify img
 								   (getf creature :perceptron)
-								   bias
-								   std-out))
+								   bias))
 					 (cond ((and (= predicted 0) (= ground 0))
 						(setq lmstn (+ lmstn 1)))
 					       ((and (= predicted 1) (= ground 1))
@@ -627,7 +621,7 @@
 				    (setq img (pre-process-image str-features (getf hold :image)))
 				    (let (predicted ground hold-label)
 				      (setq hold-label (getf hold :label))
-				      (setq predicted (classify img (getf creature :perceptron) 1 std-out))
+				      (setq predicted (classify img (getf creature :perceptron) 1))
 				      (setq ground (car (assoc hold-label category-index-pairs)))
 				      #|(format std-out "Transforming ~A~%Image Class: ~d~%With ~%~A~%...~%"
 				      (getf hold :image)
@@ -668,19 +662,16 @@
 					;;(format std-out "Added creature to ECO Features!~%")
 					(setq eco creature))
 				      (sb-thread:return-from-thread (list ':eco eco ':fitness (getf creature :fitness) ':accuracy hold-accuracy ':precision hold-precision ':recall hold-recall))))))
-			   :arguments (list c str-feats training-set holding-set category-index-pairs *standard-output*)
+			   :arguments (list c str-feats training-set holding-set category-index-pairs)
 			   :name (concatenate 'string "T" (write-to-string (position c candidate-feats 
 										     :test 'equal))))
 			  my-threads)))	 	 
        ;; join all threads
 	 (loop
-	    until (notany #'sb-thread:thread-alive-p my-threads)
-	    finally
-	      (loop
-		 for thread in my-threads
-		 do (format t "Joining thread ~A.~%" (sb-thread:thread-name thread)) and
-		 collect (sb-thread:join-thread thread) into results
-		 finally (setq generation-results results)))
+	    for thread in my-threads
+	    do (format t "Joining thread ~A.~%" (sb-thread:thread-name thread))
+	    collect (sb-thread:join-thread thread) into results
+	    finally (setq generation-results results))
        ;; calculate generation metrics
 	 (setq avg-fitness (float (/ (reduce '+ (mapcan #'(lambda (result)
 							    (when (getf result :fitness)
@@ -716,7 +707,10 @@
 			 generation-results))
        ;; update eco-features 
 	 (mapcar #'(lambda (eco)
-		     (setq eco-feats (cons eco eco-feats)))
+		     (when (not (member (getf eco :features) eco-feats
+					:test #'(lambda (x y)
+						  (equal x (getf y :features)))))
+		       (setq eco-feats (cons eco eco-feats))))
 		 (mapcan #'(lambda (result)
 			     (when (getf result :eco)
 			       (list (getf result :eco))))
@@ -750,11 +744,13 @@
 			avg-precision err-precision
 			avg-recall err-recall
 			avg-accuracy err-accuracy)
-	 (setq candidate-feats (generate-next-generation candidate-feats .35 max-child-size transforms i)))
-    (save-features eco-feats)
-    eco-feats))
+	 (setq candidate-feats (generate-next-generation candidate-feats .15 max-child-size transforms i)))
+    (when (not evolution-failed)
+      (save-features eco-feats)
+      eco-feats)))
 
-(defun run (loadp)
+(defun sucessfull-try? (loadp)
+  (setq *random-state* (make-random-state t))
   (let (eco-features
 	training-set
 	holding-set
@@ -762,8 +758,8 @@
 	split-index)
     ;; Read in the data, create training and test set
     (multiple-value-bind (images category-index-pairs)
-	(read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/002.american-flag/*.*" american-flag)
-		       ("/home/david/Code/courses/eecs_741/256_ObjectCategories/001.ak47/*.*" ak-47)))
+	(read-images '(("/home/david/Code/741/256_ObjectCategories/002.american-flag/*.*" american-flag)
+		       ("/home/david/Code/741/256_ObjectCategories/001.ak47/*.*" ak-47)))
       (setq dataset (random-shuffle images))
       (setq split-index (round (* .7 (length dataset))))
       (setq training-set (subseq dataset 0 split-index))
@@ -773,8 +769,16 @@
 	     (setq eco-features (load-features)))
 	    (t
 	     (setq eco-features
-		   (evolve-features 40 20  category-index-pairs training-set holding-set))))
-      (ada-boost eco-features training-set holding-set category-index-pairs))))
+		   (evolve-features 35 20  category-index-pairs training-set holding-set))))
+      (when (not (null eco-features))
+	(ada-boost eco-features training-set holding-set category-index-pairs)))))
+
+(defun run (loadp)
+  (format t "Attempting to evolve features...~%")
+  (loop 
+     while (not (sucessfull-try? loadp))
+     do (format t "Evolution Failed. Trying Again~%~%")
+     finally (format t "Done! :)~%")))
 
 #|
 (random-shuffle (read-images '(("/home/david/Code/courses/eecs_741/256_ObjectCategories/085.goat/*.*" goat) ("/home/david/Code/courses/eecs_741/256_ObjectCategories/084.giraffe/*.*" giraffe))))
