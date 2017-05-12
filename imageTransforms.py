@@ -200,5 +200,6 @@ for intensity in np.nditer(img):
     print str(intensity) + " ",
 print ")"
 print
+exit()
 #except:
 #    print exitStr

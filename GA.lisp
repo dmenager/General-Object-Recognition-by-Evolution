@@ -345,10 +345,12 @@
 ;; mutation-prob = mutation probability of child
 ;; transforms = transformations 
 (defun generate-next-generation (candidate-feats mutation-prob max-child-size transforms generation-num)
-  (let (fitnesses mean-fitness most-fit next-gen)
+  (let (fitnesses mean-fitness most-fit next-gen max-pop)
     (setq fitnesses (mapcar #'(lambda (feat)
 				(getf feat :fitness))
 			    candidate-feats))
+    ;; my poor computer can only handle 30 individuals per generation
+    (setq max-pop 30)
     (setq mean-fitness (/ (reduce '+ fitnesses) (length fitnesses)))
     (when  (> (length fitnesses) 0 )
       (setq most-fit
@@ -356,6 +358,7 @@
 			(when (>= (getf creature :fitness) mean-fitness)
 			  (list creature)))
 		    candidate-feats))
+      (setq most-fit (random-shuffle most-fit))
       (format t "Average Fitness of Generation ~d: ~d~%" generation-num mean-fitness)
       (loop
 	 named business-time
@@ -368,7 +371,10 @@
 	      do
 		(setq child (mutate (cross-over creature1 creature2 max-child-size nil) mutation-prob transforms))		     
 		(when (not (null child))
-		  (setq next-gen (cons child next-gen))))
+		  (setq next-gen (cons child next-gen))
+		  (when (>= (length next-gen) max-pop)
+		    (format t "Next generation contains ~d members~%" (length next-gen))
+		    (return-from business-time next-gen))))
 	 finally 
 	   (format t "Next generation contains ~d members~%" (length next-gen))
 	   (return-from business-time next-gen)))))
@@ -424,15 +430,16 @@
 		    (setq precision 0)
 		    (setq recall 0)
 		    (setq accuracy 0)
-		    (cond ((not (= 0 tp fn))
-			   (format t "Recall Defined~%")
-			   (setq recall (/ tp (+ fn tp))))
-			  ((not (= 0 tp fp))
-			   (format t "Precision Defined~%")
-			   (setq precision (/ tp (+ tp fp))))
-			  ((not (= 0 tp tn fp fn))
-			   (format t "Accuracy Defined~%")
-			   (setq accuracy (/ (+ tp tn) (+ tp tn fp fn)))))
+		    
+		    (when (not (= 0 tp fn))
+		      (format t "Recall Defined~%")
+		      (setq recall (/ tp (+ fn tp))))
+		    (when (not (= 0 tp fp))
+		      (format t "Precision Defined~%")
+		      (setq precision (/ tp (+ tp fp))))
+		    (when (not (= 0 tp tn fp fn))
+		      (format t "Accuracy Defined~%")
+		      (setq accuracy (/ (+ tp tn) (+ tp tn fp fn))))
 		    (write-to-file "boost.csv"
 				   tau
 				   0
@@ -476,7 +483,7 @@
     (setq transforms
 	  (list '(:name gabor :types (img percent float float float int float ("constant" "nearest" "reflect" "mirror" "wrap") int)) 
 		'(:name gradient :types (img int))
-		'(:name radon :types (img))
+		;;'(:name radon :types (img))
 		;;'(:name square-root :types (img)) 
 		'(:name gaussian :types (img int))
 		'(:name histogram :types (img int))
@@ -532,6 +539,7 @@
        with avg-fitness = 0 and avg-precision = 0 and avg-recall = 0 and avg-accuracy = 0
        with err-fitness = 0 and err-precision = 0 and err-recall = 0 and err-accuracy = 0
        with my-threads = nil
+       with max-eco-feats = 25
        when (null candidate-feats)
        do
 	 (setq evolution-failed t)
@@ -658,9 +666,12 @@
 				      ;;(format std-out "True Positives: ~d True Negatives: ~d False Positives: ~d False Negatives: ~d~%" hold-tp hold-tn hold-fp hold-fn)
 				      ;;(format std-out "Accuracy: ~d Precision: ~d Recall: ~d~%~%" hold-accuracy hold-precision hold-recall)
 				      ;; return the fit individual on join
-				      (when (> (getf creature :fitness) fitness-criterion)
+				      ;;(when (> (getf creature :fitness) fitness-criterion)
 					;;(format std-out "Added creature to ECO Features!~%")
-					(setq eco creature))
+				      ;;(setq eco creature))
+				      ;; if the creature has some discriminative ability
+				      (when (> hold-accuracy .6)
+					(setq eco creature)) 
 				      (sb-thread:return-from-thread (list ':eco eco ':fitness (getf creature :fitness) ':accuracy hold-accuracy ':precision hold-precision ':recall hold-recall))))))
 			   :arguments (list c str-feats training-set holding-set category-index-pairs)
 			   :name (concatenate 'string "T" (write-to-string (position c candidate-feats 
@@ -744,10 +755,17 @@
 			avg-precision err-precision
 			avg-recall err-recall
 			avg-accuracy err-accuracy)
-	 (setq candidate-feats (generate-next-generation candidate-feats .15 max-child-size transforms i)))
-    (when (not evolution-failed)
-      (save-features eco-feats)
-      eco-feats)))
+	 (cond ((>= (length eco-feats) max-eco-feats)
+		(return-from evolver))
+	       (t
+		(setq candidate-feats (generate-next-generation candidate-feats .15 max-child-size transforms i)))))
+    (cond ((not evolution-failed)
+	   (save-features eco-feats)
+	   eco-feats)
+	  (t
+	   (setq candidate-feats nil)
+	   (setq eco-feats nil)
+	   nil))))
 
 (defun sucessfull-try? (loadp)
   (setq *random-state* (make-random-state t))
@@ -769,8 +787,11 @@
 	     (setq eco-features (load-features)))
 	    (t
 	     (setq eco-features
-		   (evolve-features 35 20  category-index-pairs training-set holding-set))))
+		   (evolve-features 30 10  category-index-pairs training-set holding-set))))
       (when (not (null eco-features))
+	(format t "Evolutionarily Constructed Features:~%~A~%~%" (mapcar #'(lambda (feature)
+									     (getf feature :features))
+									 eco-features))
 	(ada-boost eco-features training-set holding-set category-index-pairs)))))
 
 (defun run (loadp)
